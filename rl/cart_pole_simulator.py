@@ -14,7 +14,7 @@ class BasicCartPole:
         self.x = x
         self.v = v
         self.angle = angle
-        self.rot_v = np.array([0.0]*len(x))
+        self.rot_v = np.array([0.0]*len(x), dtype=np.float32)
         self.dt = dt
         self.visualize = visualize
         self.t_sim = 0
@@ -52,8 +52,9 @@ class BasicCartPole:
         Returns a boolean numpy array indicating which simulations are ongoing and which ones have failed.
         """
         self.ok_state = np.logical_and.reduce((
-            self.ok_state, self.angle <= np.pi/2, self.angle >= -np.pi/2, self.x >= -self.TRACK_LENGTH / 2,
-            self.x <= self.TRACK_LENGTH / 2))        
+            self.ok_state, self.angle <= np.pi/2, self.angle >= -
+            np.pi/2, self.x >= -self.TRACK_LENGTH / 2,
+            self.x <= self.TRACK_LENGTH / 2))
         return self.ok_state
 
     def get_state(self):
@@ -92,7 +93,7 @@ class SimpleCartPole(BasicCartPole):
 
         # Calculate new stick angle and angular velocity.
         # Force due to gravity
-        
+
         f_gravity_tangential = 0.5 * np.sin(self.angle) * self.stick_gravity
         # Force due to car acceleration of cart.
         f_cart_horizontal = - self.MASS_STICK * accel / 2
@@ -110,7 +111,6 @@ class RealisticCartPole(BasicCartPole):
     MU_C = 0.01  # friction coefficient between cart and track
     MU_P = 0.001  # friction coefficient between pole and cart
     POLE_LENGTH = 1
-
 
     def __init__(self, x=np.array([0.0], dtype=np.float32), v=np.array([0.0],
                  dtype=np.float32), angle=np.array([0.0], dtype=np.float32), visualize=False, dt=0.02):
@@ -140,26 +140,16 @@ def simple_strategy():
     """
     Try to balance the stick by applying a force proportional to the angle.
     """
-    # cartpole = BasicCartPole(x=0, v=0, angle=np.pi/8)
-    #cartpole = SimpleCartPole(x=np.array([0.0]), v=np.array([0.0]), angle=np.array([np.pi/8]), visualize=True)
-    cartpole = SimpleCartPole(x=np.array([0.0, 1.0]), v=np.array([0.0, 0.0]), angle=np.array([np.pi/8, np.pi/8]), visualize=False)
+    cartpole = RealisticCartPole(x=np.array([0.0]), v=np.array([0.0]),
+                               angle=np.array([np.pi/8]), visualize=True)
     for t in np.arange(0, 10, cartpole.dt):
         f = 180.0 / np.pi * cartpole.angle / 0.5
         cartpole.apply_and_step(f)
         cartpole.maybe_plot()
-        print(cartpole.ok())
         if not cartpole.ok()[0]:
             print("Fail!")
             break
 
 
 if __name__ == '__main__':
-    if True:  # True:
-        simple_strategy()
-    else:
-        cartpole = BasicCartPole(x=0, v=0, angle=np.pi/8)
-        for t in np.arange(0, 10, cartpole.dt):
-            cartpole.apply_and_step(5)
-            if not cartpole.ok():
-                print("Fail!")
-                break
+    simple_strategy()
