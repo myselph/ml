@@ -12,14 +12,16 @@ from torch.utils.tensorboard import SummaryWriter
 NUM_EPOCHS = 400
 BATCH_SIZE = 512
 TIME_HORIZON = 10
+EXPERIMENT_NAME = "no_baseline_batch%d" % BATCH_SIZE
 
 device = torch.accelerator.current_accelerator(
 ).type if torch.accelerator.is_available() else "cpu"
 print(f"Using {device} device")
 
+
 def experiment_name():
     now = datetime.datetime.now()
-    return "pole_trainer" + now.strftime('%Y%m%d_%H%M%S')
+    return "pole_trainer_" + EXPERIMENT_NAME + now.strftime('_%Y%m%d_%H%M%S')
 
 # Log book: So far, tried vanilla REINFORCE w/o baseline.
 # Lots of combinations that work and that don't work.
@@ -108,7 +110,8 @@ class Policy(nn.Module):
 # be negative?
 if __name__ == "__main__":
     policy = Policy().to(device)
-    optim = torch.optim.Adam(policy.parameters(), lr=1e-3, maximize=True)
+    policy_optim = torch.optim.Adam(
+        policy.parameters(), lr=1e-3, maximize=True)
     writer = SummaryWriter('runs/' + experiment_name(), flush_secs=5)
     for epoch in np.arange(0, NUM_EPOCHS):
         t_epoch_start = time.time()
@@ -117,41 +120,48 @@ if __name__ == "__main__":
         rewards = []  # T array of B numpy arrays
         # Initialize a batch of simulations with mildly random initial points.
         x0s = np.random.uniform(-0.5, 0.5, size=BATCH_SIZE).astype(np.float32)
-        v0s = np.random.uniform(-0.05, 0.05, size=BATCH_SIZE).astype(np.float32)
-        angle0s = 2*np.random.uniform(-0.5, 0.5, size=BATCH_SIZE).astype(np.float32)*10*np.pi/180
+        v0s = np.random.uniform(-0.05, 0.05,
+                                size=BATCH_SIZE).astype(np.float32)
+        angle0s = 2 * \
+            np.random.uniform(-0.5, 0.5,
+                              size=BATCH_SIZE).astype(np.float32)*10*np.pi/180
         sim = cart_pole_simulator.SimpleCartPole(
             x=x0s, v=v0s, angle=angle0s, visualize=False)
+        values = []  # T array of B tensors containing outputs of the value function
 
         # Run the simulation in a batched manner. That is, at every time step, we
         # simulate a whole batch of agents, and collect their actions & rewards.
         for i, t in enumerate(np.arange(0, TIME_HORIZON, sim.dt)):
             inputs = torch.tensor(sim.get_state(), dtype=torch.float32)
+
             def normalize_inputs(x):
                 # x is a B x 4 tensor, the four dims being x, v, angle, rot_v.
                 x[0] = x[0] / sim.TRACK_LENGTH/2
                 x[1] = x[1] / 10.0  # empirically, velocities are mostly < 10.
                 x[2] = x[2] / (np.pi/2)
                 return x
-
-            inputs = normalize_inputs(inputs)
-            outputs = policy(inputs)  # torch.tensor B x NumActions - log probs.
+            normalized_inputs = normalize_inputs(inputs)
+            # torch.tensor B x NumActions - log probs.
+            outputs = policy(normalized_inputs)
             action = torch.distributions.Categorical(
-                logits=outputs).sample()  # torch.tensor B - sampled action indices.
+                # torch.tensor B - sampled action indices.
+                logits=outputs).sample()
             sim.apply_and_step(policy.output_to_force(action).detach().numpy())
-
-            # Abort if < 5% of simulations still running. This is mathematically a bit questionable,
-            # but it saves a lot of time because of the Powerlav distribution of simulation times
-            # (ie a few of them dominate the overall time), and allows us to make fast progress during
-            # # the early epochs when most simulations fail quickly.
-            sim_state = sim.ok(quiet=True)            
-            if sim_state.sum() / sim_state.size < 0.05:
-                break
 
             # Store the rewards and the logprob tensors of the sampled actions; we will use them
             # after the simulation ends to compute our objective function.
+            sim_state = sim.ok(quiet=True)
             rewards.append(np.where(sim_state, sim.dt, 0.0))
             logprobs.append(torch.gather(
                 outputs, dim=1, index=action.unsqueeze(1)).flatten())
+
+            # Abort if < 5% of simulations still running. This is mathematically a bit questionable,
+            # but it saves a lot of time because of the Powerlaw distribution of simulation times
+            # (ie a few of them dominate the overall time), and allows us to make fast progress during
+            # # the early epochs when most simulations fail quickly.
+            if sim_state.sum() / sim_state.size < 0.05:
+                break
+
         # Calculate returns aka discounted rewards
         returns = []  # T array of B np arrays
         gamma = 0.99
@@ -159,29 +169,39 @@ if __name__ == "__main__":
         for r in reversed(rewards):
             G_t = r + gamma*G_t
             returns.insert(0, G_t)
-        
-        # The objective function that we'll maximize.
+
+        returns_torch = torch.tensor(returns)
+        # Optional: Subtract a baseline from returns.
+        # I found subtracting the per-episode average return helps (see below), but had less success
+        # with training + subtracting a value function (my mistake was I didn't train it on all epochs,
+        # only the current one, I assume), and subtracting a per-time average. While training becomes
+        # more stable (-> more efficient, should allow for smaller batches), it also converges slower.
+        # returns_torch -= returns_torch.mean()
+
+        # The objective function of the policy that we'll maximize.
         expected_returns = torch.sum(
-            torch.stack(logprobs, dim=1) * torch.tensor(returns).T) / BATCH_SIZE
+            torch.stack(logprobs, dim=1) * returns_torch.T) / BATCH_SIZE
         epoch_dur = time.time() - t_epoch_start
         print(f"epoch: {epoch}, dur: {epoch_dur:.2f}s, E[R]: {expected_returns:.2f}, "
               f"observed <reward>: {np.sum(rewards)/BATCH_SIZE:.1f}")
 
-        optim.zero_grad()
+        policy_optim.zero_grad()
         expected_returns.backward()
-        optim.step()
+        policy_optim.step()
 
         # Write Tensorboard stats.
         writer.add_scalar('Train/Expected Returns',
                           expected_returns.item(), epoch)
         writer.add_scalar('Train/Observed <reward>',
                           np.sum(rewards)/BATCH_SIZE, epoch)
-        #for name, param in policy.named_parameters():
-        #    writer.add_histogram(f'Weights/{name}', param.data, epoch)
-        #    # Log the parameter's gradient distribution (if gradients exist)
-        #    if param.grad is not None:
-        #        writer.add_histogram(
-        #            f'Gradients/{name}', param.grad.data, epoch)
+        # writer.add_scalar('Train/Value Function Loss', td1_loss, epoch)
+        # for name, param in policy.named_parameters():
+        #   writer.add_histogram(f'Weights/{name}', param.data, epoch)
+        #   # Log the parameter's gradient distribution (if gradients exist)
+        #   if param.grad is not None:
+        #       writer.add_histogram(
+        #           f'Gradients/{name}', param.grad.data, epoch)
+        #       writer.add_scalar(f'Gradients/norm/{name}', param.grad.data.norm(2.0), epoch)
 
     writer.close()
 
