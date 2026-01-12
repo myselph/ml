@@ -3,29 +3,8 @@ import numpy as np
 import random
 from dataclasses import dataclass
 import time
-
-
-def generate_hands(num_players: int):
-    # The whole deck consists of all pairs of 1-10 (sampling w/o replacement), ie 45 cards:
-    # [(1,2), (1,3), ..., (2,1), ..., (8,9), (8,10), (9,10)], but which cards are used
-    # depends on the number of players. For now I only support 3-5.
-    full_deck = [(i, j) for i in range(1, 10) for j in range(i, 11) if i != j]
-    if num_players < 3 or num_players > 5:
-        raise "Only 3-5 players supported"
-    if num_players == 3:
-        # 36 cards, skip the 10s -> 12 cards/player
-        N = 12
-        deck = [r for r in full_deck if r[1] != 10]
-    elif num_players == 4:
-        # skip (9,10) -> 11 cards / player
-        N = 11
-        deck = full_deck[:-1]
-    else:
-        N = 9
-        deck = full_deck
-    # Shuffle and serve.
-    random.shuffle(deck)
-    return [deck[i*N:(i+1)*N] for i in range(0, num_players)]
+from abc import ABC, abstractmethod
+from typing import Callable
 
 
 # Classes that represent moves a player can make.
@@ -49,6 +28,30 @@ class ScoutAndShow:
 
 
 Move = Scout | Show | ScoutAndShow
+
+
+# Helper function to deal a whole deck.
+def generate_hands(num_players: int):
+    # The whole deck consists of all pairs of 1-10 (sampling w/o replacement), ie 45 cards:
+    # [(1,2), (1,3), ..., (2,1), ..., (8,9), (8,10), (9,10)], but which cards are used
+    # depends on the number of players. For now I only support 3-5.
+    full_deck = [(i, j) for i in range(1, 10) for j in range(i, 11) if i != j]
+    if num_players < 3 or num_players > 5:
+        raise "Only 3-5 players supported"
+    if num_players == 3:
+        # 36 cards, skip the 10s -> 12 cards/player
+        N = 12
+        deck = [r for r in full_deck if r[1] != 10]
+    elif num_players == 4:
+        # skip (9,10) -> 11 cards / player
+        N = 11
+        deck = full_deck[:-1]
+    else:
+        N = 9
+        deck = full_deck
+    # Shuffle and serve.
+    random.shuffle(deck)
+    return [deck[i*N:(i+1)*N] for i in range(0, num_players)]
 
 # Helper functions to determine whether a move is legal.
 # The entry point is is_move_valid; best to proceed from there to understand what's going on.
@@ -151,7 +154,7 @@ def is_move_valid(hand: list[tuple[int, int]], table: list[tuple[int, int]], can
 # and shares the underlying memory (ie as GameState changes, so will this class), and may
 # rework it in the future; for now, this class must only be used by a player until it executes
 # a move.
-@dataclass
+@dataclass(frozen=True)
 class InformationState:
     num_players: int
     dealer: int
@@ -189,7 +192,7 @@ class InformationState:
         # This can be used in a policy to pick a move, e.g. by randomly sampling moves,
         # or ranking them with heuristics or learned functions.
         # First, generate Scout candidates.
-        firstCardOptions = [True, False] if len(self.table) >1 else [True]
+        firstCardOptions = [True, False] if len(self.table) > 1 else [True]
         scout_candidates = [Scout(first, flip, insertPos) for first in firstCardOptions for flip in [
             False, True] for insertPos in range(0, len(self.hand)+1)]
         # TODO: Skip the below, but add a check that the table isn't empty.
@@ -212,7 +215,7 @@ class InformationState:
         if self.can_scout_and_show[self.current_player]:
             # Generate possible ranges for the Show moves - like above, but assuming the table has
             # one card less and our hand has one card more from the Scout move. The index math below
-            # hurts my head. Tests FTW.            
+            # hurts my head. Tests FTW.
             show_moves = [Show(start, length) for start in range(
                 0, len(self.hand) - (len(self.table) - 1 - 1) + 1) for length in range(len(self.table) - 1, len(self.hand) + 1 - start + 1)]
             for scout in scouts:
@@ -228,12 +231,16 @@ class GameState:
     num_players: int
     dealer: int  # index of first player
     current_player: int  # index of next player to call move() and info_state()
-    scout_benefactor: int # index of player who did the last Show or ScoutAndShow, for accounting.
+    # index of player who did the last Show or ScoutAndShow, for accounting.
+    scout_benefactor: int
     hands: list[list[tuple[int, int]]]
     table: list[tuple[int, int]]
-    scores: list[int] # Per-player running scores: scout points + cards collected - cards in hand.
-    can_scout_and_show: list[bool] # Whether a player has used their Scout & Show capability yet.
+    # Per-player running scores: scout points + cards collected - cards in hand.
+    scores: list[int]
+    # Whether a player has used their Scout & Show capability yet.
+    can_scout_and_show: list[bool]
     history: list[Move]  # History of moves.
+    initial_flip_executed: bool  # Whether the initial flip has been executed.
     finished: bool  # Whether the game is over.
 
     def __init__(self, num_players: int, dealer: int):
@@ -246,9 +253,11 @@ class GameState:
         self.scout_benefactor = -1
         self.table = []
         self.history = []
+        self.initial_flip_executed = False
         self.finished = False
 
     def move(self, m: Move):
+        assert self.initial_flip_executed
         assert not self.finished
         assert is_move_valid(self.hands[self.current_player], self.table,
                              self.can_scout_and_show[self.current_player], m)
@@ -269,6 +278,17 @@ class GameState:
 
     def is_finished(self):
         return self.finished
+
+    def maybe_flip_hand(self, flip_fns: list[Callable[[list[tuple[int, int]]], bool]]):
+        assert not self.initial_flip_executed
+        # Give each player the option to flip their hand
+        assert not self.history
+        assert len(flip_fns) == self.num_players
+        for player in range(self.num_players):
+            if flip_fns[player](self.hands[player]):
+                self.hands[player] = list(
+                    map(lambda c: (c[1], c[0]), self.hands[player]))
+        self.initial_flip_executed = True
 
     def info_state(self):
         # Returns the information state for the current player.
@@ -298,6 +318,179 @@ class GameState:
             hand[m.startPos+m.length:]
         self.scout_benefactor = self.current_player
 
+############################# Player Definitions ##############################
+
+
+class Player(ABC):
+    # Abstract base class. The player interface is very simple - the game engine
+    # calls it with the subset of the game state the player could have observed,
+    # and the player picks a move in what can be an arbitrarily complex process,
+    # including starefulness by eg caching computation results.
+    @abstractmethod
+    def flip_hand(self, hand: list[tuple[int, int]]) -> bool:
+        pass
+
+    @abstractmethod
+    def select_move(self, info_state: InformationState) -> Move:
+        pass
+
+
+class RandomPlayer(Player):
+    # A baseline player that randomly selects from the possible moves.
+    def flip_hand(self, hand: list[tuple[int, int]]) -> bool:
+        return random.choice([True, False])
+
+    def select_move(self, info_state: InformationState) -> Move:
+        return random.choice(info_state.possible_moves())
+
+
+class GreedyShowPlayer(Player):
+    # A player that maximizes for gettng rid of its cards (ie it picks the highest
+    # Show and ScoutAndShow moves).
+    def flip_hand(self, hand: list[tuple[int, int]]) -> bool:
+        return random.choice([True, False])
+
+    def select_move(self, info_state: InformationState) -> Move:
+        moves = info_state.possible_moves()
+        scouts = [m for m in moves if isinstance(m, Scout)]
+        shows = [m for m in moves if isinstance(m, Show)]
+        scout_and_shows = [m for m in moves if isinstance(m, ScoutAndShow)]
+        if scouts:
+            next_move = random.choice(scouts)
+        if shows:
+            next_move = max(shows, key=lambda m: m.length)
+        if scout_and_shows:
+            best_scout_and_show = max(
+                scout_and_shows, key=lambda m: m.show.length)
+            # Pick the Scout&Show over a Scout only if we to dump at least 3
+            # cards more - because we a) increase our hand by one b) can S&S
+            # only once c) another player scores points.
+            if not shows or next_move.length < best_scout_and_show.show.length+2:
+                next_move = best_scout_and_show
+        return next_move
+
+
+class GreedyShowPlayerWithFlip(GreedyShowPlayer):
+    # Like GreedyShowPlayer, but with non-random flip. Just to see if it makes
+    # a noticeable difference.
+    def flip_hand(self, hand: list[tuple[int, int]]) -> bool:
+        up_value = GreedyShowPlayerWithFlip._hand_value([h[0] for h in hand])
+        down_value = GreedyShowPlayerWithFlip._hand_value([h[1] for h in hand])
+        return up_value < down_value
+
+    def _count_groups_and_runs(values: list[int]):
+        group_counts = [0] * len(values)
+        run_counts = [0] * len(values)
+        for start_pos in range(len(values)):  # 0, 1, N-1
+            for meld_size in range(1, len(values) + 1 - start_pos):
+                if is_group(values[start_pos:start_pos+meld_size]):
+                    group_counts[meld_size-1] += 1
+                if is_run(values[start_pos:start_pos+meld_size]):
+                    run_counts[meld_size-1] += 1
+        # print(f"values: {values}, groups: {group_counts}, runs: {run_counts}")
+        return group_counts, run_counts
+
+    def _hand_value(values: list[int]):
+        # Compute a heuristic value of this hand, the better, the higher.
+        # This is *super* heuristic; I don't even count for overlaps (eg a triple counts
+        # as both triple and double and single).
+        (group_counts, run_counts) = GreedyShowPlayerWithFlip._count_groups_and_runs(values)
+        value = 0
+        for i, c in enumerate(run_counts):
+            # ignore the singles
+            if i == 0 or c == 0:
+                continue
+            value += i*c
+        for i, c in enumerate(group_counts):
+            if i == 0 or c == 0:
+                continue
+            # groups count more than runs of the same size, but not as much as a longer run.
+            value += (i+0.5)*c
+        return value
+
+
+# I think a better heuristic still than the greedy player would be nice.
+# What I can think of, observing my own playing style:
+# 1. Make an informed decision on the initial flip - calculate a heuristic
+#    "value" of a hand with a weighted sum of possible moves.
+#    A bit tricky to avoid overlaps (eg. to not count the double contained in a triple)
+# 2. Build groups and runs initially: In first two runs or so, check whether a
+#    Show or Scout move would improve the hand (again - value function). E.g.
+#    a single card Show could create a new group or run.
+# 3. Curriculum - early on, aim for single card Shows to improve hand.
+# Hm, all a bit hard to describe. I feel the most advanced heurstic I'd want to
+# implement is one that implements a somewhat solid value function, and looks
+# at which move improves that the most.
+# What could go into this value function?
+# 1. Find non-overlapping groups and sets (e.g. 1,2,2,2 -> [{2,2,1}, {1}].
+#    Can be done with a greedy search - 9-group, 9-set, 8-group, ... - and
+#    removing those cards - down to single cards.
+# 2. Weighted sum - e.g. num_singles + 2^p*num_2_runs + 3^p*num_2_groups + 4^p*num_3_runs etc.
+#    This sort of function would be exactly what should be learnt - I'm using a rough and
+#    probably bad intuition for what the coefficients should be. Is a 2-run 2x better
+#    than a single card?
+# 3. The score after that move.
+
+
+# Play a single round - that is, a single deck of cards - and return
+# the scores.
+def play_round(players: list[Player], dealer: int) -> list[int]:
+    game_state = GameState(len(players), dealer)
+    game_state.maybe_flip_hand([p.flip_hand for p in players])
+    current_player = dealer
+    while not game_state.is_finished():
+        info_state = game_state.info_state()
+        move = players[current_player].select_move(info_state)
+        game_state.move(move)
+        current_player = (current_player + 1) % len(players)
+    return game_state.scores
+
+# Play a game - that is num_players rounds, with each player dealing once.
+# Return the cumulative scores.
+
+
+def play_game(players: list[Player]) -> list[int]:
+    scores = []
+    for dealer in range(0, len(players)):
+        scores.append(play_round(players, dealer))
+    return [sum(y) for y in zip(*scores)]
+
+
+# Let two Player implementations compete against each other in a tournament.
+# Returns ratio of player A wins. The precise definition of that metric is
+# implementation specific, see below.
+def play_tournament(player_a_factory_fn: Callable[[], Player], player_b_factory_fn: Callable[[], Player]) -> float:
+    # For now: let one player A compete against 4 player B's. There's a lot of
+    # other types of setups we could use, such as 2A vs 3B, with different
+    # player sequences; other numbers of players (3, 4); or average between
+    # the 1-vs-4 and 4-vs-1 setting. But until I get a better
+    # understanding for how to produce rankings for multi-player games, this
+    # will do.
+    # The resulting scores get normalized - that is, we multiply the win rate
+    # of A by 4 before computing the ratio.
+    # At the very least, this should be symmetric, ie playing A against B should
+    # give the complement (1-p) of playing B against A.
+    players = [player_a_factory_fn()] + [player_b_factory_fn()] * 4
+    wins = [0]*len(players)
+
+    start_time = time.time()
+    num_games = 200
+    for reps in range(0, num_games):
+        scores = play_game(players)
+        winner_index = max(range(len(scores)), key=lambda i: scores[i])
+        wins[winner_index] += 1
+    end_time = time.time()
+
+    a_win_rate = wins[0] / (wins[0] + sum(wins[1:])/4)
+    wins = list(map(lambda i: i / sum(wins), wins))
+    print(
+        f"wins %: {wins}, a_win_rate normalized: {a_win_rate:.3f}, dt/game: {(end_time-start_time)/num_games}")
+    return a_win_rate
+
+
+def main():
+    play_tournament(lambda: GreedyShowPlayerWithFlip(),
+                    lambda: GreedyShowPlayer())
 
 
 def tests():
@@ -389,16 +582,17 @@ def tests():
     # 1 (3,4,5) show
     # 1 (3,4) show, one (4,3) show
     # So overall, 25 S&S moves.
-    info_state = InformationState(5, 0, 0, -1, hand, [(3,1)], [0]*5, [True]*5, [])
+    info_state = InformationState(
+        5, 0, 0, -1, hand, [(3, 1)], [0]*5, [True]*5, [])
     moves = info_state.possible_moves()
     for m in moves:
         print(m)
     assert 6 == len([m for m in moves if isinstance(m, Scout)])
     assert 3 == len([m for m in moves if isinstance(m, Show)])
     assert 25 == len([m for m in moves if isinstance(m, ScoutAndShow)])
-    
+
     # Expected: 12 scout moves; one show move (pair); and for S&S:
-    # for each of the 12 scout moves, two single card shows (4&5)
+    # for each of the 12 scout moves, import timetwo single card shows (4&5)
     # for 3 of the scout "3" moves, a single card show (3);
     # for 8 of the scout moves, a double card show (4&5) - 8 scouts exist that do not break up that sequence
     # when inserting the 3 before the 4, two new show moves - "3,4" and "3,4,5"
@@ -416,65 +610,21 @@ def tests():
         m, ScoutAndShow) and m.show.length == 2])
     assert 1 == len([m for m in moves if isinstance(
         m, ScoutAndShow) and m.show.length == 3])
-    
+
     # GameState tests. TODO: Add test c'tor to inject my own decks;
     # for now, just test scouting and showing and that scoring works.
     game_state = GameState(5, 1)
     assert not game_state.table
     assert game_state.scores[1] == -9
-    game_state.move(Show(0,1))
+    game_state.move(Show(0, 1))
     assert game_state.scores[1] == -8
     game_state.move(Scout(True, False, 0))
     assert game_state.scores[1] == -7
     assert game_state.scores[2] == -10
 
-
     print("All tests passed")
 
 
-def main():
-    # How long does a game take when random moves are chosen?
-    move_numbers = []
-    start_time = time.time()
-    num_games = 1000
-    for reps in range(0, num_games):
-        player = 0
-        num_players = 5
-        game_state = GameState(num_players, player)
-        move_index = 0
-        while not game_state.is_finished():            
-            info_state = game_state.info_state()
-            moves = info_state.possible_moves()
-            # policy 1: random moves.
-            # Interestingly I found that coalescing identical moves (firstCard=True/False
-            # when there is only one card on the table) shortens the game; I assume this
-            # bug made Scout moves more likely by overrepresenting them, which under random
-            # sampling leads to longer games.
-            move = random.choice(moves)
-            # policy 2: pick the largest Show; and, if there is a ScoutAndShow that's > 2, pick that.
-            # This siginficantly shortens games from ~113 moves down to ~34 moves.
-            # TODO: Use max() instead of sorting and taking the last element.
-            #shows = [m for m in moves if isinstance(m, Show)]
-            #scout_and_shows = [m for m in moves if isinstance(m, ScoutAndShow)]
-            #if shows:
-            #    shows.sort(key=lambda s: s.length)
-            #    move = shows[-1]
-            #if scout_and_shows:
-            #    scout_and_shows.sort(key=lambda s: s.show.length)
-            #    if shows and scout_and_shows[-1].show.length > move.length + 2:
-            #        move = scout_and_shows[-1]
-            game_state.move(move)
-            player = (player + 1) % num_players
-            move_index += 1
-        move_numbers.append(move_index)
-
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    mean = np.mean(move_numbers)
-    std = np.std(move_numbers)
-    print(f"#moves: {mean}+-{std}; time,[ms]/move: {elapsed_time*1000/np.sum(move_numbers)}")
-
-
 if __name__ == '__main__':
-    #tests()
+    # tests()
     main()
