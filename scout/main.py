@@ -371,14 +371,13 @@ class GreedyShowPlayer(Player):
 
 
 class GreedyShowPlayerWithFlip(GreedyShowPlayer):
-    # Like GreedyShowPlayer, but with non-random flip. Just to see if it makes
-    # a noticeable difference.
+    # Like GreedyShowPlayer, but with non-random flip - improves performance.
     def flip_hand(self, hand: list[tuple[int, int]]) -> bool:
-        up_value = GreedyShowPlayerWithFlip._hand_value([h[0] for h in hand])
-        down_value = GreedyShowPlayerWithFlip._hand_value([h[1] for h in hand])
+        up_value = self._hand_value([h[0] for h in hand])
+        down_value = self._hand_value([h[1] for h in hand])
         return up_value < down_value
 
-    def _count_groups_and_runs(values: list[int]):
+    def _count_groups_and_runs(self, values: list[int]):
         group_counts = [0] * len(values)
         run_counts = [0] * len(values)
         for start_pos in range(len(values)):  # 0, 1, N-1
@@ -387,14 +386,13 @@ class GreedyShowPlayerWithFlip(GreedyShowPlayer):
                     group_counts[meld_size-1] += 1
                 if is_run(values[start_pos:start_pos+meld_size]):
                     run_counts[meld_size-1] += 1
-        # print(f"values: {values}, groups: {group_counts}, runs: {run_counts}")
         return group_counts, run_counts
 
-    def _hand_value(values: list[int]):
+    def _hand_value(self, values: list[int]):
         # Compute a heuristic value of this hand, the better, the higher.
         # This is *super* heuristic; I don't even count for overlaps (eg a triple counts
         # as both triple and double and single).
-        (group_counts, run_counts) = GreedyShowPlayerWithFlip._count_groups_and_runs(values)
+        (group_counts, run_counts) = self._count_groups_and_runs(values)
         value = 0
         for i, c in enumerate(run_counts):
             # ignore the singles
@@ -409,27 +407,51 @@ class GreedyShowPlayerWithFlip(GreedyShowPlayer):
         return value
 
 
-# I think a better heuristic still than the greedy player would be nice.
-# What I can think of, observing my own playing style:
-# 1. Make an informed decision on the initial flip - calculate a heuristic
-#    "value" of a hand with a weighted sum of possible moves.
-#    A bit tricky to avoid overlaps (eg. to not count the double contained in a triple)
-# 2. Build groups and runs initially: In first two runs or so, check whether a
-#    Show or Scout move would improve the hand (again - value function). E.g.
-#    a single card Show could create a new group or run.
-# 3. Curriculum - early on, aim for single card Shows to improve hand.
-# Hm, all a bit hard to describe. I feel the most advanced heurstic I'd want to
-# implement is one that implements a somewhat solid value function, and looks
-# at which move improves that the most.
-# What could go into this value function?
-# 1. Find non-overlapping groups and sets (e.g. 1,2,2,2 -> [{2,2,1}, {1}].
-#    Can be done with a greedy search - 9-group, 9-set, 8-group, ... - and
-#    removing those cards - down to single cards.
-# 2. Weighted sum - e.g. num_singles + 2^p*num_2_runs + 3^p*num_2_groups + 4^p*num_3_runs etc.
-#    This sort of function would be exactly what should be learnt - I'm using a rough and
-#    probably bad intuition for what the coefficients should be. Is a 2-run 2x better
-#    than a single card?
-# 3. The score after that move.
+class PlanningPlayer(GreedyShowPlayerWithFlip):
+    # A player with a heuristic value function that simulates all moves and picks the one
+    # with the highest value. Best perorming heurstic player. There are various knobs in
+    # the value function one could tune through RL or grid search.
+    c: float
+
+    def __init__(self):
+        self.c = 0.25 # found via grid search - self-play and against GreedyShowPlayerWithFlip
+
+    def select_move(self, info_state: InformationState) -> Move:
+        moves = info_state.possible_moves()
+        best_value = None
+        best_move = None
+        hand_values = [h[0] for h in info_state.hand]
+        for move in moves:
+            value = self._value(info_state, move)
+            if not best_value or value > best_value:
+                best_value = value
+                best_move = move
+        return best_move
+
+    def _value(self, info_state: InformationState, move: Move):
+        # Calculates a heuristic value for the state of the game after the given move.
+        # This involved simulating every move and calculating the new value.
+        hand_values = [h[0] for h in info_state.hand]
+        if isinstance(move, Scout):
+            hand_values_new = self._simulate_scout(
+                hand_values, info_state.table, move)
+            return self.c*self._hand_value(hand_values_new) - len(hand_values_new) - 1
+        elif isinstance(move, Show):
+            hand_values_new = self._simulate_show(hand_values, move)
+            return self.c*self._hand_value(hand_values_new) - len(hand_values_new) + len(info_state.table)
+        else:
+            hand_values_new = self._simulate_scout(
+                hand_values, info_state.table, move.scout)
+            hand_values_new = self._simulate_show(hand_values_new, move.show)
+            return self.c*self._hand_value(hand_values_new) - len(hand_values_new) + len(info_state.table) - 1
+
+    def _simulate_scout(self,  hand_values: list[int], table: list[tuple[int, int]], scout: Scout):
+        card = table[0] if scout.firstCard else table[-1]
+        card_value = card[1] if scout.flipCard else card[0]
+        return hand_values[:scout.insertPosition] + [card_value] + hand_values[scout.insertPosition:]
+
+    def _simulate_show(self,  hand_values: list[int], show: Show):
+        return hand_values[:show.startPos] + hand_values[show.startPos+show.length:]
 
 
 # Play a single round - that is, a single deck of cards - and return
@@ -489,9 +511,9 @@ def play_tournament(player_a_factory_fn: Callable[[], Player], player_b_factory_
 
 
 def main():
-    play_tournament(lambda: GreedyShowPlayerWithFlip(),
-                    lambda: GreedyShowPlayer())
-
+    play_tournament(lambda: PlanningPlayer, lambda: GreedyShowPlayerWithFlip)
+            
+    
 
 def tests():
     game_state = GameState(5, 0)

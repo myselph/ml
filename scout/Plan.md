@@ -2,7 +2,7 @@
 #
 # 1. Done - get a simulator (scoring, computing valid moves) up and running
 #    with random policies.
-# 2. Try some heuristics, and infra for comparing different policies.    
+# 2. Done - Try some heuristics, and infra for comparing different policies.    
 # 3. Try ISMCTS.
 # 4. Neural policies, value functions?
 # The below is a bit of a braindump and likely out of date.
