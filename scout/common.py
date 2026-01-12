@@ -1,10 +1,6 @@
 # Self-contained module for shared types and functionality.
-import numpy as np
-import random
 from dataclasses import dataclass
-import time
 from abc import ABC, abstractmethod
-from typing import Callable
 
 
 # Classes that represent moves a player can make.
@@ -29,121 +25,89 @@ class ScoutAndShow:
 
 Move = Scout | Show | ScoutAndShow
 
+# Utility functions to operate on a set or sets of cards.
+class Util:
+    def is_group(cards: list[int]):
+        # Check if it is a group (cards with the same )
+        is_group = True
+        for i in range(1, len(cards)):
+            if cards[i] != cards[0]:
+                is_group = False
+                break
+        return is_group
 
-# Helper function to deal a whole deck.
-# TODO: Move into GameState
-def generate_hands(num_players: int):
-    # The whole deck consists of all pairs of 1-10 (sampling w/o replacement), ie 45 cards:
-    # [(1,2), (1,3), ..., (2,1), ..., (8,9), (8,10), (9,10)], but which cards are used
-    # depends on the number of players. For now I only support 3-5.
-    full_deck = [(i, j) for i in range(1, 10) for j in range(i, 11) if i != j]
-    if num_players < 3 or num_players > 5:
-        raise "Only 3-5 players supported"
-    if num_players == 3:
-        # 36 cards, skip the 10s -> 12 cards/player
-        N = 12
-        deck = [r for r in full_deck if r[1] != 10]
-    elif num_players == 4:
-        # skip (9,10) -> 11 cards / player
-        N = 11
-        deck = full_deck[:-1]
-    else:
-        N = 9
-        deck = full_deck
-    # Shuffle and serve.
-    random.shuffle(deck)
-    return [deck[i*N:(i+1)*N] for i in range(0, num_players)]
+    def is_run(cards: list[int]):
+        # Check if it is an ascending run.
+        is_ascending_run = True
+        for i in range(1, len(cards)):
+            if cards[i] != cards[i-1] + 1:
+                is_ascending_run = False
+                break
+        if is_ascending_run:
+            return True
+        # Check if it's a descending run.
+        is_descending_run = True
+        for i in range(1, len(cards)):
+            if cards[i] != cards[i-1] - 1:
+                is_descending_run = False
+                break
+        return is_descending_run
 
-# Helper functions to determine whether a move is legal.
-# The entry point is is_move_valid; best to proceed from there to understand what's going on.
-# TODO: Move into Util class or module.
+    def is_scout_valid(hand_values: list[int], table_values: list[int], scout: Scout):
+        return table_values and scout.insertPosition >= 0 and scout.insertPosition <= len(hand_values)
 
-
-def is_group(cards: list[int]):
-    # First check if it is a group (cards with the same )
-    is_group = True
-    for i in range(1, len(cards)):
-        if cards[i] != cards[0]:
-            is_group = False
-            break
-    return is_group
-
-
-def is_run(cards: list[int]):
-    # Check if it is an ascending run.
-    is_ascending_run = True
-    for i in range(1, len(cards)):
-        if cards[i] != cards[i-1] + 1:
-            is_ascending_run = False
-            break
-    if is_ascending_run:
-        return True
-    # Check if it's a descending run.
-    is_descending_run = True
-    for i in range(1, len(cards)):
-        if cards[i] != cards[i-1] - 1:
-            is_descending_run = False
-            break
-    return is_descending_run
-
-
-def is_scout_valid(hand_values: list[int], table_values: list[int], scout: Scout):
-    return table_values and scout.insertPosition >= 0 and scout.insertPosition <= len(hand_values)
-
-
-def is_show_valid(hand_values: list[int], table_values: list[int], show: Show):
-    # Basic range checks
-    if show.startPos < 0 or show.length < 1 or show.startPos+show.length > len(hand_values):
-        return False
-    if show.length < len(table_values):
-        return False
-
-    # The meld (cards being played) must be either a group or a run.
-    meld_values = hand_values[show.startPos:show.startPos+show.length]
-    meld_is_group = is_group(meld_values)
-    if not meld_is_group:
-        meld_is_run = is_run(meld_values)
-    if not meld_is_group and not meld_is_run:
-        return False
-    # If the meld is longer than what's on the table, it's a legal move.
-    if show.length > len(table_values):
-        return True
-
-    # If the number of cards on the table and in the meld are the same, and we need to decide which one wins.
-    # Groups win over runs, higher groups win over lower groups, higher runs win over lower runs.
-    # NB table is guaranteed to be either a group or a run by induction - groups and runs are the only
-    # valid melds to be played, and any subsequent action either replaces them with another group or meld,
-    # or scouts cards such that the group / meld property is retained.
-    table_is_group = is_group(table_values)
-    if meld_is_group:
-        return not table_is_group or table_values[0] < meld_values[0]
-    else:
-        return not table_is_group and max(table_values) < max(meld_values)
-
-
-def is_move_valid(hand: list[tuple[int, int]], table: list[tuple[int, int]], can_scout_and_show: bool, move: Move):
-    hand_values = [h[0] for h in hand]
-    table_values = [t[0] for t in table]
-    if isinstance(move, Scout):
-        return is_scout_valid(hand_values, table_values, move)
-    elif isinstance(move, Show):
-        return is_show_valid(hand_values, table_values, move)
-    else:  # Scout & Show
-        if not can_scout_and_show:
+    def is_show_valid(hand_values: list[int], table_values: list[int], show: Show):
+        # Basic range checks
+        if show.startPos < 0 or show.length < 1 or show.startPos+show.length > len(hand_values):
             return False
-        if not is_scout_valid(hand_values, table_values, move.scout):
+        if show.length < len(table_values):
             return False
-        # Simulate the Scout move
-        if move.scout.firstCard:  # pick first card or last?
-            table_values = table_values[1:]
-            # Flip card or not?
-            scouted_value = table[0][1] if move.scout.flipCard else table[0][0]
+
+        # The meld (cards being played) must be either a group or a run.
+        meld_values = hand_values[show.startPos:show.startPos+show.length]
+        meld_is_group = Util.is_group(meld_values)
+        if not meld_is_group:
+            meld_is_run = Util.is_run(meld_values)
+        if not meld_is_group and not meld_is_run:
+            return False
+        # If the meld is longer than what's on the table, it's a legal move.
+        if show.length > len(table_values):
+            return True
+
+        # If the number of cards on the table and in the meld are the same, and we need to decide which one wins.
+        # Groups win over runs, higher groups win over lower groups, higher runs win over lower runs.
+        # NB table is guaranteed to be either a group or a run by induction - groups and runs are the only
+        # valid melds to be played, and any subsequent action either replaces them with another group or meld,
+        # or scouts cards such that the group / meld property is retained.
+        table_is_group = Util.is_group(table_values)
+        if meld_is_group:
+            return not table_is_group or table_values[0] < meld_values[0]
         else:
-            table_values = table_values[:-1]
-            scouted_value = table[-1][1] if move.scout.flipCard else table[-1][0]
-        hand_values.insert(move.scout.insertPosition, scouted_value)
-        # Check the Show move.
-        return is_show_valid(hand_values, table_values, move.show)
+            return not table_is_group and max(table_values) < max(meld_values)
+
+    def is_move_valid(hand: list[tuple[int, int]], table: list[tuple[int, int]], can_scout_and_show: bool, move: Move):
+        hand_values = [h[0] for h in hand]
+        table_values = [t[0] for t in table]
+        if isinstance(move, Scout):
+            return Util.is_scout_valid(hand_values, table_values, move)
+        elif isinstance(move, Show):
+            return Util.is_show_valid(hand_values, table_values, move)
+        else:  # Scout & Show
+            if not can_scout_and_show:
+                return False
+            if not Util.is_scout_valid(hand_values, table_values, move.scout):
+                return False
+            # Simulate the Scout move
+            if move.scout.firstCard:  # pick first card or last?
+                table_values = table_values[1:]
+                # Flip card or not?
+                scouted_value = table[0][1] if move.scout.flipCard else table[0][0]
+            else:
+                table_values = table_values[:-1]
+                scouted_value = table[-1][1] if move.scout.flipCard else table[-1][0]
+            hand_values.insert(move.scout.insertPosition, scouted_value)
+            # Check the Show move.
+            return Util.is_show_valid(hand_values, table_values, move.show)
 
 
 # InformationState is a class that represents the information available to a single player.
@@ -198,14 +162,14 @@ class InformationState:
         scout_candidates = [Scout(first, flip, insertPos) for first in firstCardOptions for flip in [
             False, True] for insertPos in range(0, len(self.hand)+1)]
         # TODO: Skip the below, but add a check that the table isn't empty.
-        scouts = [s for s in scout_candidates if is_move_valid(
+        scouts = [s for s in scout_candidates if Util.is_move_valid(
             self.hand, self.table, self.can_scout_and_show[self.current_player], s)]
 
         # Show candidates - generate possible ones (at least as many cards as there are on the table),
         # then filter by validity (group or sequence?)
         show_candidates = [Show(start, length) for start in range(
             0, len(self.hand) - (len(self.table) - 1)) for length in range(len(self.table), len(self.hand) + 1 - start)]
-        shows = [s for s in show_candidates if is_move_valid(
+        shows = [s for s in show_candidates if Util.is_move_valid(
             self.hand, self.table, self.can_scout_and_show[self.current_player], s)]
 
         # Scout and Show candidates.
@@ -223,10 +187,11 @@ class InformationState:
             for scout in scouts:
                 for show in show_moves:
                     move = ScoutAndShow(scout, show)
-                    if is_move_valid(self.hand, self.table, self.can_scout_and_show[self.current_player], move):
+                    if Util.is_move_valid(self.hand, self.table, self.can_scout_and_show[self.current_player], move):
                         scout_and_shows.append(move)
 
         return scouts + shows + scout_and_shows
+
 
 class Player(ABC):
     # Abstract base class. The player interface is very simple - the game engine

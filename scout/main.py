@@ -1,10 +1,10 @@
 # A Scout (card game) simulator.
 from dataclasses import dataclass
 import time
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Callable
 from game_state import GameState
-from common import Player, is_group, is_run, is_move_valid, Scout, Show, ScoutAndShow, InformationState
+from common import Player, Util, Scout, Show, ScoutAndShow, InformationState
 from players import PlanningPlayer, GreedyShowPlayerWithFlip
 
 
@@ -72,77 +72,77 @@ def main():
 def tests():
     game_state = GameState(5, 0)
     # Tests for is_group, is_run.
-    assert is_group([])
-    assert is_group([1])
-    assert is_group([1, 1])
-    assert not is_group([1, 2])
-    assert not is_group([1, 1, 2])
-    assert is_run([])
-    assert is_run([1])
-    assert is_run([1, 2])
-    assert is_run([1, 2, 3])
-    assert is_run([3, 2, 1])
-    assert not is_run([1, 1])
-    assert not is_run([1, 3])
-    assert not is_run([1, 2, 4])
-    assert not is_run([1, 3, 3])
+    assert Util.is_group([])
+    assert Util.is_group([1])
+    assert Util.is_group([1, 1])
+    assert not Util.is_group([1, 2])
+    assert not Util.is_group([1, 1, 2])
+    assert Util.is_run([])
+    assert Util.is_run([1])
+    assert Util.is_run([1, 2])
+    assert Util.is_run([1, 2, 3])
+    assert Util.is_run([3, 2, 1])
+    assert not Util.is_run([1, 1])
+    assert not Util.is_run([1, 3])
+    assert not Util.is_run([1, 2, 4])
+    assert not Util.is_run([1, 3, 3])
 
     # Tests for is_move_valid.
     # Scouts
-    assert not is_move_valid([(1, 2)], [], False, Scout(False, False, 0))
-    assert not is_move_valid([(1, 2)], [], False, Scout(False, False, 1))
+    assert not Util.is_move_valid([(1, 2)], [], False, Scout(False, False, 0))
+    assert not Util.is_move_valid([(1, 2)], [], False, Scout(False, False, 1))
     table = [(2, 9), (3, 4), (4, 1)]
-    assert is_move_valid([(5, 6)], table, False, Scout(True, True, 0))
-    assert is_move_valid([(5, 6)], table, False, Scout(True, True, 1))
-    assert not is_move_valid([(5, 6)], table, False, Scout(True, True, 2))
+    assert Util.is_move_valid([(5, 6)], table, False, Scout(True, True, 0))
+    assert Util.is_move_valid([(5, 6)], table, False, Scout(True, True, 1))
+    assert not Util.is_move_valid([(5, 6)], table, False, Scout(True, True, 2))
     # Shows - groups vs. run
-    assert is_move_valid([(1, 6), (1, 7), (1, 8)], table, False, Show(0, 3))
-    assert is_move_valid([(1, 6), (1, 7), (1, 8), (1, 9)],
+    assert Util.is_move_valid([(1, 6), (1, 7), (1, 8)], table, False, Show(0, 3))
+    assert Util.is_move_valid([(1, 6), (1, 7), (1, 8), (1, 9)],
                          table, False, Show(0, 3))
-    assert is_move_valid([(1, 6), (1, 7), (1, 8), (1, 9)],
+    assert Util.is_move_valid([(1, 6), (1, 7), (1, 8), (1, 9)],
                          table, False, Show(0, 4))
-    assert is_move_valid([(1, 6), (1, 7), (1, 8), (1, 9)],
+    assert Util.is_move_valid([(1, 6), (1, 7), (1, 8), (1, 9)],Util.
                          table, False, Show(1, 3))
-    assert not is_move_valid(
+    assert not Util.is_move_valid(
         [(1, 6), (1, 7), (1, 8), (1, 9)], table, False, Show(1, 2))
     # Shows - runs vs. run
-    assert not is_move_valid(
+    assert not Util.is_move_valid(
         [(2, 8), (3, 6), (4, 7), (5, 8), (1, 9)], table, False, Show(0, 3))
-    assert is_move_valid([(2, 8), (3, 6), (4, 7), (5, 8),
+    assert Util.is_move_valid([(2, 8), (3, 6), (4, 7), (5, 8),
                          (1, 9)], table, False, Show(1, 3))
-    assert is_move_valid([(2, 8), (3, 6), (4, 7), (5, 8),
+    assert Util.is_move_valid([(2, 8), (3, 6), (4, 7), (5, 8),
                          (1, 9)], table, False, Show(0, 4))
-    assert not is_move_valid(
+    assert not Util.is_move_valid(
         [(2, 8), (3, 6), (4, 7), (5, 8), (1, 9)], table, False, Show(1, 4))
-    assert is_move_valid([(2, 8), (3, 6), (4, 7), (5, 8),
+    assert Util.is_move_valid([(2, 8), (3, 6), (4, 7), (5, 8),
                          (1, 9)], table, False, Show(0, 4))
-    assert not is_move_valid(
+    assert not Util.is_move_valid(
         [(2, 8), (3, 6), (4, 7), (5, 8), (1, 9)], table, False, Show(2, 3))
 
     # Scout and Show. TODO:
     hand = [(3, 1), (5, 8), (6, 9)]
     # 3,4,5,6 wins over 2,3
-    assert is_move_valid(hand, table, True, ScoutAndShow(
+    assert Util.is_move_valid(hand, table, True, ScoutAndShow(
         Scout(False, False, 1), Show(0, 4)))
-    assert not is_move_valid(hand, table, False, ScoutAndShow(
+    assert not Util.is_move_valid(hand, table, False, ScoutAndShow(
         Scout(False, False, 1), Show(0, 4)))
     # 3,4,5 wins over 2,3
-    assert is_move_valid(hand, table, True, ScoutAndShow(
+    assert Util.is_move_valid(hand, table, True, ScoutAndShow(
         Scout(False, False, 1), Show(0, 3)))
     # 3,4 wins over 2,3
-    assert is_move_valid(hand, table, True, ScoutAndShow(
+    assert Util.is_move_valid(hand, table, True, ScoutAndShow(
         Scout(False, False, 1), Show(0, 2)))
     # 1, 3 is not valid
-    assert not is_move_valid(hand, table, True, ScoutAndShow(
+    assert not Util.is_move_valid(hand, table, True, ScoutAndShow(
         Scout(False, True, 1), Show(0, 2)))
     # 2,3 loses to 3,4
-    assert not is_move_valid(hand, table, True, ScoutAndShow(
+    assert not Util.is_move_valid(hand, table, True, ScoutAndShow(
         Scout(True, False, 0), Show(0, 2)))
     # 5,6 wins over 3,4
-    assert is_move_valid(hand, table, True, ScoutAndShow(
+    assert Util.is_move_valid(hand, table, True, ScoutAndShow(
         Scout(True, False, 0), Show(2, 2)))
     # illegal to play 3,5,6
-    assert not is_move_valid(hand, table, True, ScoutAndShow(
+    assert not Util.is_move_valid(hand, table, True, ScoutAndShow(
         Scout(True, True, 0), Show(1, 3)))
 
     # InformationState tests - specifically, the valid move generator.
@@ -161,8 +161,6 @@ def tests():
     info_state = InformationState(
         5, 0, 0, -1, hand, [(3, 1)], [0]*5, [True]*5, [])
     moves = info_state.possible_moves()
-    for m in moves:
-        print(m)
     assert 6 == len([m for m in moves if isinstance(m, Scout)])
     assert 3 == len([m for m in moves if isinstance(m, Show)])
     assert 25 == len([m for m in moves if isinstance(m, ScoutAndShow)])

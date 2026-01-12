@@ -1,6 +1,30 @@
 # A Scout (card game) simulator.
+import random
 from typing import Callable
-from common import Scout, Show, ScoutAndShow, Move, generate_hands, is_move_valid, InformationState
+from common import Scout, Show, Move, InformationState, Util
+
+# Helper function to deal a whole deck.
+def _generate_hands(num_players: int):
+    # The whole deck consists of all pairs of 1-10 (sampling w/o replacement), ie 45 cards:
+    # [(1,2), (1,3), ..., (2,1), ..., (8,9), (8,10), (9,10)], but which cards are used
+    # depends on the number of players. For now I only support 3-5.
+    full_deck = [(i, j) for i in range(1, 10) for j in range(i, 11) if i != j]
+    if num_players < 3 or num_players > 5:
+        raise "Only 3-5 players supported"
+    if num_players == 3:
+        # 36 cards, skip the 10s -> 12 cards/player
+        N = 12
+        deck = [r for r in full_deck if r[1] != 10]
+    elif num_players == 4:
+        # skip (9,10) -> 11 cards / player
+        N = 11
+        deck = full_deck[:-1]
+    else:
+        N = 9
+        deck = full_deck
+    # Shuffle and serve.
+    random.shuffle(deck)
+    return [deck[i*N:(i+1)*N] for i in range(0, num_players)]
 
 class GameState:
     num_players: int
@@ -20,7 +44,7 @@ class GameState:
 
     def __init__(self, num_players: int, dealer: int):
         self.num_players = num_players
-        self.hands = generate_hands(num_players)
+        self.hands = _generate_hands(num_players)
         self.scores = [-len(h) for h in self.hands]
         self.can_scout_and_show = [True] * num_players
         self.dealer = dealer
@@ -34,7 +58,7 @@ class GameState:
     def move(self, m: Move):
         assert self.initial_flip_executed
         assert not self.finished
-        assert is_move_valid(self.hands[self.current_player], self.table,
+        assert Util.is_move_valid(self.hands[self.current_player], self.table,
                              self.can_scout_and_show[self.current_player], m)
         if isinstance(m, Scout):
             self._scout(m)

@@ -1,7 +1,7 @@
 # A Scout (card game) simulator.
 import random
 from dataclasses import dataclass
-from common import Player, InformationState, Scout, Show, ScoutAndShow, Move, is_run, is_group
+from common import Player, InformationState, Scout, Show, ScoutAndShow, Move, Util
 
 class RandomPlayer(Player):
     # A baseline player that randomly selects from the possible moves.
@@ -50,9 +50,9 @@ class GreedyShowPlayerWithFlip(GreedyShowPlayer):
         run_counts = [0] * len(values)
         for start_pos in range(len(values)):  # 0, 1, N-1
             for meld_size in range(1, len(values) + 1 - start_pos):
-                if is_group(values[start_pos:start_pos+meld_size]):
+                if Util.is_group(values[start_pos:start_pos+meld_size]):
                     group_counts[meld_size-1] += 1
-                if is_run(values[start_pos:start_pos+meld_size]):
+                if Util.is_run(values[start_pos:start_pos+meld_size]):
                     run_counts[meld_size-1] += 1
         return group_counts, run_counts
 
@@ -88,7 +88,6 @@ class PlanningPlayer(GreedyShowPlayerWithFlip):
         moves = info_state.possible_moves()
         best_value = None
         best_move = None
-        hand_values = [h[0] for h in info_state.hand]
         for move in moves:
             value = self._value(info_state, move)
             if not best_value or value > best_value:
@@ -98,7 +97,7 @@ class PlanningPlayer(GreedyShowPlayerWithFlip):
 
     def _value(self, info_state: InformationState, move: Move):
         # Calculates a heuristic value for the state of the game after the given move.
-        # This involved simulating every move and calculating the new value.
+        # This involved simulating every move and calculating the new value.        
         hand_values = [h[0] for h in info_state.hand]
         if isinstance(move, Scout):
             hand_values_new = self._simulate_scout(
