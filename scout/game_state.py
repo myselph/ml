@@ -22,7 +22,9 @@ def _generate_hands(num_players: int):
     else:
         N = 9
         deck = full_deck
-    # Shuffle and serve.
+    # Randomly flip, shuffle and serve.
+    flips = random.choices([True,False], k=len(deck))
+    deck = [c if not flip else (c[1],c[0]) for (c, flip) in zip(deck, flips)]
     random.shuffle(deck)
     return [deck[i*N:(i+1)*N] for i in range(0, num_players)]
 
