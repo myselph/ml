@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from abc import abstractmethod
 from game_state import GameState
 from common import Util, Scout, Show, ScoutAndShow, InformationState
-    
+
+
 def test_utils():
     game_state = GameState(5, 0)
     # Tests for is_group, is_run.
@@ -31,26 +32,27 @@ def test_utils():
     assert Util.is_move_valid([(5, 6)], table, False, Scout(True, True, 1))
     assert not Util.is_move_valid([(5, 6)], table, False, Scout(True, True, 2))
     # Shows - groups vs. run
-    assert Util.is_move_valid([(1, 6), (1, 7), (1, 8)], table, False, Show(0, 3))
+    assert Util.is_move_valid(
+        [(1, 6), (1, 7), (1, 8)], table, False, Show(0, 3))
     assert Util.is_move_valid([(1, 6), (1, 7), (1, 8), (1, 9)],
-                         table, False, Show(0, 3))
+                              table, False, Show(0, 3))
     assert Util.is_move_valid([(1, 6), (1, 7), (1, 8), (1, 9)],
-                         table, False, Show(0, 4))
+                              table, False, Show(0, 4))
     assert Util.is_move_valid([(1, 6), (1, 7), (1, 8), (1, 9)],
-                         table, False, Show(1, 3))
+                              table, False, Show(1, 3))
     assert not Util.is_move_valid(
         [(1, 6), (1, 7), (1, 8), (1, 9)], table, False, Show(1, 2))
     # Shows - runs vs. run
     assert not Util.is_move_valid(
         [(2, 8), (3, 6), (4, 7), (5, 8), (1, 9)], table, False, Show(0, 3))
     assert Util.is_move_valid([(2, 8), (3, 6), (4, 7), (5, 8),
-                         (1, 9)], table, False, Show(1, 3))
+                               (1, 9)], table, False, Show(1, 3))
     assert Util.is_move_valid([(2, 8), (3, 6), (4, 7), (5, 8),
-                         (1, 9)], table, False, Show(0, 4))
+                               (1, 9)], table, False, Show(0, 4))
     assert not Util.is_move_valid(
         [(2, 8), (3, 6), (4, 7), (5, 8), (1, 9)], table, False, Show(1, 4))
     assert Util.is_move_valid([(2, 8), (3, 6), (4, 7), (5, 8),
-                         (1, 9)], table, False, Show(0, 4))
+                               (1, 9)], table, False, Show(0, 4))
     assert not Util.is_move_valid(
         [(2, 8), (3, 6), (4, 7), (5, 8), (1, 9)], table, False, Show(2, 3))
 
@@ -80,11 +82,13 @@ def test_utils():
     assert not Util.is_move_valid(hand, table, True, ScoutAndShow(
         Scout(True, True, 0), Show(1, 3)))
 
+
 def test_InformationState():
     # InformationState tests - specifically, the valid move generator.
     # 2 cards in hand, none on table -> only Shows.
     hand = [(4, 7), (5, 8)]
-    info_state = InformationState(5, 0, 0, -1, hand, [], [0]*5, [True]*5, [])
+    info_state = InformationState(
+        5, 0, 0, -1, hand, [], [2]*5, [0]*5, [True]*5, [])
     assert info_state.possible_moves() == [Show(0, 1), Show(0, 2), Show(1, 1)]
 
     # 2 cards in hand, 1 on table -> 6 Scouts, 3 Shows (4, 5, (4,5)),
@@ -95,7 +99,7 @@ def test_InformationState():
     # 1 (3,4) show, one (4,3) show
     # So overall, 25 S&S moves.
     info_state = InformationState(
-        5, 0, 0, -1, hand, [(3, 1)], [0]*5, [True]*5, [])
+        5, 0, 0, -1, hand, [(3, 1)], [2]*5, [0]*5, [True]*5, [])
     moves = info_state.possible_moves()
     assert 6 == len([m for m in moves if isinstance(m, Scout)])
     assert 3 == len([m for m in moves if isinstance(m, Show)])
@@ -109,7 +113,7 @@ def test_InformationState():
     # when inserting the 3 after the for, a new double "4, 3".
     # So 38 ScoutAndShow moves.
     info_state = InformationState(
-        5, 0, 0, 0, hand, [(2, 1), (3, 1)], [0]*5, [True]*5, [])
+        5, 0, 0, 0, hand, [(2, 1), (3, 1)], [2]*5, [0]*5, [True]*5, [])
     moves = info_state.possible_moves()
     assert 12 == len([m for m in moves if isinstance(m, Scout)])
     assert 1 == len([m for m in moves if isinstance(m, Show)])
@@ -120,6 +124,7 @@ def test_InformationState():
         m, ScoutAndShow) and m.show.length == 2])
     assert 1 == len([m for m in moves if isinstance(
         m, ScoutAndShow) and m.show.length == 3])
+
 
 def test_GameState():
     # GameState tests. TODO: Add test c'tor to inject my own decks;
@@ -134,3 +139,38 @@ def test_GameState():
     game_state.move(Scout(True, False, 0))
     assert game_state.scores[1] == -7
     assert game_state.scores[2] == -10
+
+    # Test the GameState generator. Rudimentary - as above, it would be better
+    # to inject the hands.
+    # Make a couple of moves, create a determinization, and ensure it is a
+    # valid representation.
+    game_state = GameState(5, 0)
+    card1 = game_state.hands[0][0]
+    game_state.maybe_flip_hand([lambda _: False]*5)
+    game_state.move(Show(0, 1))
+    game_state.move(Scout(True, False, 0))
+    card2 = game_state.hands[2][0]
+    game_state.move(Show(0, 1))
+    game_state.move(Scout(True, False, 0))
+    card3 = game_state.hands[4][0]
+    game_state.move(Show(0, 1))
+    game_state.move(ScoutAndShow(Scout(True, False, 0), Show(0, 1)))
+    game_state.move(Scout(True, False, 0))
+    # After all those moves, the following holds:
+    # Card counts: 8, 11, 8, 10, 8; table is empty.
+    # The card that the first player has shown is in the second player's hand
+    # The card that the third player has shown is in the fourth player's hand
+    # The card that the fifth player has shown is in the second player's hand
+    # The third player's hand is unchanged (no flips either).
+    info_state = game_state.info_state()
+    determinization = GameState.sample_from_info_state(info_state)
+    assert [len(h) for h in determinization.hands] == [len(h)
+                                                       for h in game_state.hands]
+    assert not determinization.table
+    assert card1 in determinization.hands[1] or (
+        card1[1], card1[0]) in determinization.hands[1]
+    assert card2 in determinization.hands[3] or (
+        card2[1], card2[0]) in determinization.hands[3]
+    assert card3 in determinization.hands[1] or (
+        card3[1], card3[0]) in determinization.hands[1]
+    assert info_state.hand == determinization.hands[2]

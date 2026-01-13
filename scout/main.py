@@ -65,8 +65,9 @@ def play_tournament(player_a_factory_fn: Callable[[], Player], player_b_factory_
 
 
 def main():
-    play_tournament(lambda: PlanningPlayer(), lambda: GreedyShowPlayerWithFlip())
-            
-    
+    play_tournament(lambda: PlanningPlayer(),
+                    lambda: GreedyShowPlayerWithFlip())
+
+
 if __name__ == '__main__':
     main()

@@ -1,11 +1,12 @@
 # A Scout (card game) simulator.
 import random
 from dataclasses import dataclass
-from common import Player, InformationState, Scout, Show, ScoutAndShow, Move, Util
+from common import Player, InformationState, Scout, Show, ScoutAndShow, Move, Util, Card
+
 
 class RandomPlayer(Player):
     # A baseline player that randomly selects from the possible moves.
-    def flip_hand(self, hand: list[tuple[int, int]]) -> bool:
+    def flip_hand(self, hand: list[Card]) -> bool:
         return random.choice([True, False])
 
     def select_move(self, info_state: InformationState) -> Move:
@@ -15,7 +16,7 @@ class RandomPlayer(Player):
 class GreedyShowPlayer(Player):
     # A player that maximizes for gettng rid of its cards (ie it picks the highest
     # Show and ScoutAndShow moves).
-    def flip_hand(self, hand: list[tuple[int, int]]) -> bool:
+    def flip_hand(self, hand: list[Card]) -> bool:
         return random.choice([True, False])
 
     def select_move(self, info_state: InformationState) -> Move:
@@ -40,7 +41,7 @@ class GreedyShowPlayer(Player):
 
 class GreedyShowPlayerWithFlip(GreedyShowPlayer):
     # Like GreedyShowPlayer, but with non-random flip - improves performance.
-    def flip_hand(self, hand: list[tuple[int, int]]) -> bool:
+    def flip_hand(self, hand: list[Card]) -> bool:
         up_value = self._hand_value([h[0] for h in hand])
         down_value = self._hand_value([h[1] for h in hand])
         return up_value < down_value
@@ -82,7 +83,7 @@ class PlanningPlayer(GreedyShowPlayerWithFlip):
     c: float
 
     def __init__(self):
-        self.c = 0.25 # found via grid search - self-play and against GreedyShowPlayerWithFlip
+        self.c = 0.25  # found via grid search - self-play and against GreedyShowPlayerWithFlip
 
     def select_move(self, info_state: InformationState) -> Move:
         moves = info_state.possible_moves()
@@ -97,7 +98,7 @@ class PlanningPlayer(GreedyShowPlayerWithFlip):
 
     def _value(self, info_state: InformationState, move: Move):
         # Calculates a heuristic value for the state of the game after the given move.
-        # This involved simulating every move and calculating the new value.        
+        # This involved simulating every move and calculating the new value.
         hand_values = [h[0] for h in info_state.hand]
         if isinstance(move, Scout):
             hand_values_new = self._simulate_scout(
@@ -112,11 +113,10 @@ class PlanningPlayer(GreedyShowPlayerWithFlip):
             hand_values_new = self._simulate_show(hand_values_new, move.show)
             return self.c*self._hand_value(hand_values_new) - len(hand_values_new) + len(info_state.table) - 1
 
-    def _simulate_scout(self,  hand_values: list[int], table: list[tuple[int, int]], scout: Scout):
+    def _simulate_scout(self,  hand_values: list[int], table: list[Card], scout: Scout):
         card = table[0] if scout.firstCard else table[-1]
         card_value = card[1] if scout.flipCard else card[0]
         return hand_values[:scout.insertPosition] + [card_value] + hand_values[scout.insertPosition:]
 
     def _simulate_show(self,  hand_values: list[int], show: Show):
         return hand_values[:show.startPos] + hand_values[show.startPos+show.length:]
-
