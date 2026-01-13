@@ -2,3 +2,4 @@ proj
 rl/runs
 rl/__pycache__
 scout/__pycache__
+scout/.vscode/settings.json

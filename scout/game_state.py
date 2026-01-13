@@ -38,7 +38,7 @@ def _generate_hands(num_players: int) -> list[list[Card]]:
     flips = random.choices([True, False], k=len(deck))
     deck = [c if not flip else (c[1], c[0]) for (c, flip) in zip(deck, flips)]
     random.shuffle(deck)
-    return [deck[i*N:(i+1)*N] for i in range(0, num_players)]
+    return [deck[i * N:(i + 1) * N] for i in range(0, num_players)]
 
 
 def _normalize_card(c: Card) -> Card:
@@ -49,33 +49,36 @@ def _normalize_card(c: Card) -> Card:
 # information from the recorded moves - we should end up with a set of
 # hands with some known cards in the right positions, and a set of
 # cards that have been removed from the game.
-def _simulate(num_players: int, dealer: int, history: list[RecordedMove]) -> tuple[list[list[Card | None], list[Card]]]:
+def _simulate(num_players: int,
+              dealer: int,
+              history: list[RecordedMove]) -> tuple[list[list[Card | None],
+                                                         list[Card]]]:
     cards_per_player = _initial_cards_per_player(num_players)
-    partial_hand = [[None]*cards_per_player for _ in range(num_players)]
+    partial_hand = [[None] * cards_per_player for _ in range(num_players)]
     player_index = dealer
     removed_cards = []
     for rm in history:
-        if isinstance(rm, RecordedScout):            
+        if isinstance(rm, RecordedScout):
             card = rm.card
-            card = card if not rm.move.flipCard else (card[1], card[0])
-            partial_hand[player_index] = partial_hand[player_index][:rm.move.insertPosition] + [
-                card] + partial_hand[player_index][rm.move.insertPosition:]
+            card = card if not rm.move.flip else (card[1], card[0])
+            partial_hand[player_index] = partial_hand[player_index][:rm.move.insertPos] + [
+                card] + partial_hand[player_index][rm.move.insertPos:]
         elif isinstance(rm, RecordedShow):
             # NB we do not use the .shown attribute, and it could conceivably
             # be removed from RecordedShow, but it seems like it belongs there
-            # and may be useful for other replays (eg visualization, neural nets).
+            # and may be useful for other replays (eg visualization, neural
+            # nets).
             removed_cards += rm.removed
             partial_hand[player_index] = partial_hand[player_index][:rm.move.startPos] + \
-                partial_hand[player_index][rm.move.startPos+rm.move.length:]        
+                partial_hand[player_index][rm.move.startPos + rm.move.length:]
         elif isinstance(rm, RecordedScoutAndShow):
             card = rm.scout.card
-            card = card if not rm.scout.move.flipCard else (card[1], card[0])
-            partial_hand[player_index] = partial_hand[player_index][:rm.scout.move.insertPosition] + [
-                card] + partial_hand[player_index][rm.scout.move.insertPosition:]
+            card = card if not rm.scout.move.flip else (card[1], card[0])
+            partial_hand[player_index] = partial_hand[player_index][:rm.scout.move.insertPos] + [
+                card] + partial_hand[player_index][rm.scout.move.insertPos:]
             removed_cards += rm.show.removed
             partial_hand[player_index] = partial_hand[player_index][:rm.show.move.startPos] + \
-                partial_hand[player_index][rm.show.move.startPos +
-                                           rm.show.move.length:]
+                partial_hand[player_index][rm.show.move.startPos + rm.show.move.length:]
         else:
             raise "Unknown move"
         player_index = (player_index + 1) % num_players
@@ -90,7 +93,8 @@ class GameState:
     scout_benefactor: int
     hands: list[list[Card]]
     table: list[Card]
-    # Per-player running scores: scout points + cards collected - cards in hand.
+    # Per-player running scores: scout points + cards collected - cards in
+    # hand.
     scores: list[int]
     # Whether a player has used their Scout & Show capability yet.
     can_scout_and_show: list[bool]
@@ -128,7 +132,9 @@ class GameState:
             scouted_card = self._scout(m.scout)
             (s, r) = self._show(m.show)[:]
             recorded_move = RecordedScoutAndShow(
-                RecordedScout(m.scout, scouted_card), RecordedShow(m.show, s, r))
+                RecordedScout(
+                    m.scout, scouted_card), RecordedShow(
+                    m.show, s, r))
             self.can_scout_and_show[self.current_player] = False
         if not self.hands[self.current_player]:
             self.finished = True
@@ -171,23 +177,25 @@ class GameState:
         game_state.history = info_state.history[:]
         game_state.initial_flip_executed = True
         game_state.finished = False
-        game_state.hands = [[] for _ in range(game_state.num_players)]        
+        game_state.hands = [[] for _ in range(game_state.num_players)]
 
         # 1. Replay the recorded moves starting on a deck of Nones; this should
         #    give us a final deck with some known cards in the opponents hands.
         (partial_hands, removed_cards) = _simulate(
             info_state.num_players, info_state.dealer, game_state.history)
-        
+
         # 2. Fill in the information about our own hand we know.
         partial_hands[info_state.current_player] = info_state.hand[:]
 
         # 3. Generate a random hand, and flatten it (get rid of assignments).
-        #    NB cards in random_deck are not normalized (ie some may have been flipped).
+        # NB cards in random_deck are not normalized (ie some may have been
+        # flipped).
         random_deck = _generate_hands(
             game_state.num_players)
         random_deck = [card for hand in random_deck for card in hand]
         # 4. Remove all cards in the partial hand and on the table.
-        normalized_partial_hands = [_normalize_card(c) for h in partial_hands for c in h if c is not None]
+        normalized_partial_hands = [_normalize_card(
+            c) for h in partial_hands for c in h if c is not None]
         normalized_table = [_normalize_card(c) for c in info_state.table]
         random_deck = [
             c for c in random_deck if not _normalize_card(c) in normalized_partial_hands
@@ -195,9 +203,9 @@ class GameState:
         # 5. Remove cards that are not in the game anymore. NB both return values
         #    use normalized cards.
         normalized_removed_cards = [_normalize_card(c) for c in removed_cards]
-        random_deck = [
-            c for c in random_deck if not _normalize_card(c) in normalized_removed_cards]
-        
+        random_deck = [c for c in random_deck if not _normalize_card(
+            c) in normalized_removed_cards]
+
         # 6. Distribute the remaining cards in random_deck across the players.
         card_index = 0
         for p in range(info_state.num_players):
@@ -205,14 +213,14 @@ class GameState:
                 if not partial_hands[p][i]:
                     partial_hands[p][i] = random_deck[card_index]
                     card_index += 1
-        
-        game_state.hands = partial_hands        
+
+        game_state.hands = partial_hands
         assert card_index == len(random_deck)
         return game_state
 
     def _scout(self, m: Scout) -> Card:
         hand = self.hands[self.current_player]
-        if m.firstCard:
+        if m.first:
             card = self.table[0]
             scouted_card = card
             self.table = self.table[1:]
@@ -220,9 +228,9 @@ class GameState:
             card = self.table[-1]
             scouted_card = card
             self.table = self.table[:-1]
-        if m.flipCard:
+        if m.flip:
             card = (card[1], card[0])
-        hand.insert(m.insertPosition, card)
+        hand.insert(m.insertPos, card)
         self.scores[self.scout_benefactor] += 1
         self.scores[self.current_player] -= 1
         return scouted_card
@@ -230,10 +238,10 @@ class GameState:
     def _show(self, m: Show) -> tuple[list[Card], list[Card]]:
         hand = self.hands[self.current_player]
         self.scores[self.current_player] += len(self.table) + m.length
-        shown_cards = hand[m.startPos:m.startPos+m.length]
+        shown_cards = hand[m.startPos:m.startPos + m.length]
         removed_cards = self.table[:]
         self.table = shown_cards
         self.hands[self.current_player] = hand[:m.startPos] + \
-            hand[m.startPos+m.length:]
+            hand[m.startPos + m.length:]
         self.scout_benefactor = self.current_player
         return shown_cards, removed_cards
