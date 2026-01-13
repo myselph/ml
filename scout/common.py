@@ -116,24 +116,30 @@ class Util:
 
 
 @dataclass
-class RecordedMove:
-    scouted: Card
+class RecordedScout:
+    move: Scout
+    card: Card
+
+@dataclass
+class RecordedShow:
+    move: Show
     shown: list[Card]
     removed: list[Card]
 
+@dataclass
+class RecordedScoutAndShow:
+    scout: RecordedScout
+    show: RecordedShow
+
+type RecordedMove = RecordedScout | RecordedShow | RecordedScoutAndShow
 
 # InformationState is a class that represents the information available to a single player.
 # It is therefore a subset of (and constructed from) the entire game state, notably
-# excluding what cards the other players have.
-# TODO: So far I have assumed that players do not have any information about the order and
-# flipping of other player's hands - that is, if they flip or not after dealing or scouting,
-# where they insert scouted cards, and where their shown card(s) are from inside their
-# hand. That assumption was wrong - flipping, insertion place and selection place, are public
-# info and thus need to be recorded, and an AI can make use of it. I think that means I have to
-# 1) add all that info to the RecordedMove data structure
-# 2) adjust the sampling functionality in GameState to incorporate that knowledge - that should
-#    reduce the Monte Carlo search space a lot, and help especially towards the end of the game
-#    where an AI agent knows more and more about the other players' hands.
+# excluding what cards the other players have (though a subset of that can be reconstructed
+# from the moves they made.
+# Notably, the details of every player's moves - position information, card flipping - are
+# public knowledge (ie a player cannot hide where a scouted card is inserted, if it's
+# flipped, etc.).
 @dataclass(frozen=True)
 class InformationState:
     num_players: int

@@ -140,10 +140,8 @@ def test_GameState():
     assert game_state.scores[1] == -7
     assert game_state.scores[2] == -10
 
-    # Test the GameState generator. Rudimentary - as above, it would be better
-    # to inject the hands.
-    # Make a couple of moves, create a determinization, and ensure it is a
-    # valid representation.
+    # Test the GameState generator. Make a couple of moves, create a
+    # determinization, and ensure it is a valid representation.
     game_state = GameState(5, 0)
     card1 = game_state.hands[0][0]
     game_state.maybe_flip_hand([lambda _: False]*5)
@@ -151,26 +149,18 @@ def test_GameState():
     game_state.move(Scout(True, False, 0))
     card2 = game_state.hands[2][0]
     game_state.move(Show(0, 1))
-    game_state.move(Scout(True, False, 0))
-    card3 = game_state.hands[4][0]
-    game_state.move(Show(0, 1))
-    game_state.move(ScoutAndShow(Scout(True, False, 0), Show(0, 1)))
-    game_state.move(Scout(True, False, 0))
-    # After all those moves, the following holds:
-    # Card counts: 8, 11, 8, 10, 8; table is empty.
-    # The card that the first player has shown is in the second player's hand
-    # The card that the third player has shown is in the fourth player's hand
-    # The card that the fifth player has shown is in the second player's hand
-    # The third player's hand is unchanged (no flips either).
+    game_state.move(Scout(True, True, 3))
+    card3 = game_state.hands[4][4]
+    game_state.move(Show(4, 1))
+    game_state.move(ScoutAndShow(Scout(True, True, 6), Show(6, 1)))
+    game_state.move(Scout(True, True, 2))
+    
     info_state = game_state.info_state()
     determinization = GameState.sample_from_info_state(info_state)
     assert [len(h) for h in determinization.hands] == [len(h)
                                                        for h in game_state.hands]
     assert not determinization.table
-    assert card1 in determinization.hands[1] or (
-        card1[1], card1[0]) in determinization.hands[1]
-    assert card2 in determinization.hands[3] or (
-        card2[1], card2[0]) in determinization.hands[3]
-    assert card3 in determinization.hands[1] or (
-        card3[1], card3[0]) in determinization.hands[1]
+    assert card1 == determinization.hands[1][0]
+    assert (card2[1], card2[0]) == determinization.hands[3][3]
+    assert card3 == determinization.hands[1][2]
     assert info_state.hand == determinization.hands[2]
