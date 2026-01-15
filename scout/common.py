@@ -180,19 +180,19 @@ class InformationState:
 
     def possible_moves(self) -> tuple[Move, ...]:
         # Return a list of legal moves the player can make.
-        # This can be used in a policy to pick a move, e.g. by randomly sampling
-        # moves, or ranking them with heuristics or learned functions.
-        # First, generate Scout candidates.
-        firstCardOptions = [True, False] if len(self.table) > 1 else [True]
-        scout_candidates = [
-            Scout(
-                first, flip, insertPos) for first in firstCardOptions for flip in [
-                False, True] for insertPos in range(
-                0, len(
-                    self.hand) + 1)]
-        # TODO: Skip the below, but add a check that the table isn't empty.
-        scouts = [s for s in scout_candidates if Util.is_move_valid(
-            self.hand, self.table, self.can_scout_and_show[self.current_player], s)]
+        # First, generate Scout candidates. We do not call is_move_valid to
+        # speed things up, instead simply avoiding invalid moves by
+        # construction
+        if self.table:
+            firstCardOptions = [True, False] if len(self.table) > 1 else [True]
+            scouts = [
+                Scout(
+                    first, flip, insertPos)
+                for first in firstCardOptions
+                for flip in [False, True]
+                for insertPos in range(0, len(self.hand) + 1)]
+        else:
+            scouts = []
 
         # Show candidates - generate possible ones (at least as many cards as
         # there are on the table), then filter by validity (group or sequence?)
