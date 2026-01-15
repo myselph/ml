@@ -1,26 +1,27 @@
 # Self-contained module for shared types and functionality.
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
 type Card = tuple[int, int]
 
 # Classes that represent moves a player can make.
 
 
-@dataclass
+@dataclass(frozen=True)
 class Scout:
     first: bool
     flip: bool
     insertPos: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class Show:
     startPos: int
     length: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class ScoutAndShow:
     scout: Scout
     show: Show
@@ -28,11 +29,11 @@ class ScoutAndShow:
 
 type Move = Scout | Show | ScoutAndShow
 
-# Utility functions to operate on a set or sets of cards.
-
 
 class Util:
-    def is_group(cards: list[int]):
+    # Utility functions to operate on a set or sets of cards.
+    @staticmethod
+    def is_group(cards: Sequence[int]):
         # Check if it is a group (cards with the same )
         is_group = True
         for i in range(1, len(cards)):
@@ -41,7 +42,8 @@ class Util:
                 break
         return is_group
 
-    def is_run(cards: list[int]):
+    @staticmethod
+    def is_run(cards: Sequence[int]):
         # Check if it is an ascending run.
         is_ascending_run = True
         for i in range(1, len(cards)):
@@ -58,16 +60,18 @@ class Util:
                 break
         return is_descending_run
 
+    @staticmethod
     def is_scout_valid(
-            hand_values: list[int],
-            table_values: list[int],
+            hand_values: Sequence[int],
+            table_values: Sequence[int],
             scout: Scout):
         return table_values and scout.insertPos >= 0 and scout.insertPos <= len(
             hand_values)
 
+    @staticmethod
     def is_show_valid(
-            hand_values: list[int],
-            table_values: list[int],
+            hand_values: Sequence[int],
+            table_values: Sequence[int],
             show: Show):
         # Basic range checks
         if show.startPos < 0 or show.length < 1 or show.startPos + \
@@ -80,9 +84,8 @@ class Util:
         meld_values = hand_values[show.startPos:show.startPos + show.length]
         meld_is_group = Util.is_group(meld_values)
         if not meld_is_group:
-            meld_is_run = Util.is_run(meld_values)
-        if not meld_is_group and not meld_is_run:
-            return False
+            if not Util.is_run(meld_values):
+                return False
         # If the meld is longer than what's on the table, it's a legal move.
         if show.length > len(table_values):
             return True
@@ -100,9 +103,10 @@ class Util:
         else:
             return not table_is_group and max(table_values) < max(meld_values)
 
+    @staticmethod
     def is_move_valid(
-            hand: list[Card],
-            table: list[Card],
+            hand: Sequence[Card],
+            table: Sequence[Card],
             can_scout_and_show: bool,
             move: Move):
         hand_values = [h[0] for h in hand]
@@ -129,20 +133,20 @@ class Util:
             return Util.is_show_valid(hand_values, table_values, move.show)
 
 
-@dataclass
+@dataclass(frozen=True)
 class RecordedScout:
     move: Scout
     card: Card
 
 
-@dataclass
+@dataclass(frozen=True)
 class RecordedShow:
     move: Show
-    shown: list[Card]
-    removed: list[Card]
+    shown: tuple[Card, ...]
+    removed: tuple[Card, ...]
 
 
-@dataclass
+@dataclass(frozen=True)
 class RecordedScoutAndShow:
     scout: RecordedScout
     show: RecordedShow
@@ -150,29 +154,31 @@ class RecordedScoutAndShow:
 
 type RecordedMove = RecordedScout | RecordedShow | RecordedScoutAndShow
 
-# InformationState is a class that represents the information available to a
-# single player. It is therefore a subset of (and constructed from) the entire
-# game state, notably excluding what cards the other players have (though a
-# subset of that can be reconstructed from the moves they made.
-# Notably, the details of every player's moves - position information, card
-# flipping - are public knowledge (ie a player cannot hide where a scouted card
-# is inserted, if it's flipped, etc.).
-
 
 @dataclass(frozen=True)
 class InformationState:
+    # InformationState is a class that represents the information available to a
+    # single player. It is therefore a subset of (and constructed from) the entire
+    # game state, notably excluding what cards the other players have (though a
+    # subset of that can be reconstructed from the moves they made.
+    # Notably, the details of every player's moves - position information, card
+    # flipping - are public knowledge (ie a player cannot hide where a scouted card
+    # is inserted, if it's flipped, etc.).
+    # InformationState needs to be hashable so we can use it as key in dictionaries
+    # (necessary in ISMCTS). This requirs converting the lists in GameState to
+    # tuples and vice versa.
     num_players: int
     dealer: int
     current_player: int
     scout_benefactor: int
-    hand: list[Card]
-    table: list[Card]
-    num_cards: list[int]
-    scores: list[int]
-    can_scout_and_show: list[bool]
-    history: list[RecordedMove]
+    hand: tuple[Card, ...]
+    table: tuple[Card, ...]
+    num_cards: tuple[int, ...]
+    scores: tuple[int, ...]
+    can_scout_and_show: tuple[bool, ...]
+    history: tuple[RecordedMove, ...]
 
-    def possible_moves(self):
+    def possible_moves(self) -> tuple[Move, ...]:
         # Return a list of legal moves the player can make.
         # This can be used in a policy to pick a move, e.g. by randomly sampling
         # moves, or ranking them with heuristics or learned functions.
@@ -198,10 +204,6 @@ class InformationState:
 
         # Scout and Show candidates.
         # This could probably be sped up somehow.
-        # TODO: Coalesce combos that lead to the same outcome - specifically,
-        # showing the same card that was just scouted should count as a single
-        # option, but leads to len(hand)+1 separate moves due to the insert
-        # positions.
         scout_and_shows = []
         if self.can_scout_and_show[self.current_player]:
             # Generate possible ranges for the Show moves - like above, but
@@ -210,14 +212,23 @@ class InformationState:
             show_moves = [Show(start, length)
                           for start in range(0, len(self.hand) - (len(self.table) - 1 - 1) + 1)
                           for length in range(len(self.table) - 1, len(self.hand) + 1 - start + 1)]
+            coalesced_scouts: list[tuple[bool, bool]] = []
             for scout in scouts:
                 for show in show_moves:
                     move = ScoutAndShow(scout, show)
                     if Util.is_move_valid(
                             self.hand, self.table, self.can_scout_and_show[self.current_player], move):
+                        # Coalesce Scout & Show moves: If we scout a card and
+                        # play it again right away, the insert position does not
+                        # matter -> only keep the first one we encounter.
+                        if show.startPos == scout.insertPos and show.length == 1:
+                            if (scout.first, scout.flip) in coalesced_scouts:
+                                continue
+                            else:
+                                coalesced_scouts.append((scout.first, scout.flip))
                         scout_and_shows.append(move)
 
-        return scouts + shows + scout_and_shows
+        return tuple(scouts + shows + scout_and_shows)
 
 
 class Player(ABC):
@@ -226,7 +237,7 @@ class Player(ABC):
     # and the player picks a move in what can be an arbitrarily complex process,
     # including starefulness by eg caching computation results.
     @abstractmethod
-    def flip_hand(self, hand: list[Card]) -> bool:
+    def flip_hand(self, hand: Sequence[Card]) -> bool:
         pass
 
     @abstractmethod

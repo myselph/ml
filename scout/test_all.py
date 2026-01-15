@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from abc import abstractmethod
 from game_state import GameState
 from common import Util, Scout, Show, ScoutAndShow, InformationState
+from ismcts_player import IsmctsPlayer
 
 
 def test_utils():
@@ -86,39 +87,48 @@ def test_utils():
 def test_InformationState():
     # InformationState tests - specifically, the valid move generator.
     # 2 cards in hand, none on table -> only Shows.
-    hand = [(4, 7), (5, 8)]
+    hand = ((4, 7), (5, 8))
     info_state = InformationState(
-        5, 0, 0, -1, hand, [], [2]*5, [0]*5, [True]*5, [])
-    assert info_state.possible_moves() == [Show(0, 1), Show(0, 2), Show(1, 1)]
+        5, 0, 0, -1, hand, (), (2, 2, 2, 2, 2), (0, 0, 0, 0, 0),
+        (True, True, True, True, True), ())
+    assert info_state.possible_moves() == (Show(0, 1), Show(0, 2), Show(1, 1))
 
     # 2 cards in hand, 1 on table -> 6 Scouts, 3 Shows (4, 5, (4,5)),
     # For Scout & Shows:
-    # 6 scout moves; for each, 3 single card shows -> 18; also:
+    # 6 scout moves; for each, 3 single card shows -> 18.
+    # However, since we coalesce some of them (see possible_moves()),
+    # it's just 14 - for each of the flip/noFlip option, there are
+    # 3 insert places, but two of them get ignored if we show that
+    # scouted card right away -> 18-4=14
+    # Also:
     # 4 (4,5) shows (insert 1 or 3, left or right)
     # 1 (3,4,5) show
     # 1 (3,4) show, one (4,3) show
-    # So overall, 25 S&S moves.
+    # So overall, 21 S&S moves.
     info_state = InformationState(
-        5, 0, 0, -1, hand, [(3, 1)], [2]*5, [0]*5, [True]*5, [])
+        5, 0, 0, -1, hand, ((3, 1),), (2, 2, 2, 2, 2), (0, 0, 0, 0, 0),
+        (True, True, True, True, True), ())
     moves = info_state.possible_moves()
     assert 6 == len([m for m in moves if isinstance(m, Scout)])
     assert 3 == len([m for m in moves if isinstance(m, Show)])
-    assert 25 == len([m for m in moves if isinstance(m, ScoutAndShow)])
+    assert 21 == len([m for m in moves if isinstance(m, ScoutAndShow)])
 
     # Expected: 12 scout moves; one show move (pair); and for S&S:
-    # for each of the 12 scout moves, import timetwo single card shows (4&5)
-    # for 3 of the scout "3" moves, a single card show (3);
+    # for each of the 12 scout moves, two single card shows (4&5)
+    # for 1 out of 3 of the scout "3" moves, a single card show (3),
+    # because of coalescing (two of the three insert positions are ignored)
     # for 8 of the scout moves, a double card show (4&5) - 8 scouts exist that do not break up that sequence
     # when inserting the 3 before the 4, two new show moves - "3,4" and "3,4,5"
     # when inserting the 3 after the for, a new double "4, 3".
-    # So 38 ScoutAndShow moves.
+    # So 36 ScoutAndShow moves.
     info_state = InformationState(
-        5, 0, 0, 0, hand, [(2, 1), (3, 1)], [2]*5, [0]*5, [True]*5, [])
+        5, 0, 0, 0, hand, ((2, 1), (3, 1)), (2, 2, 2, 2, 2), (0, 0, 0, 0, 0),
+        (True, True, True, True, True), ())
     moves = info_state.possible_moves()
     assert 12 == len([m for m in moves if isinstance(m, Scout)])
     assert 1 == len([m for m in moves if isinstance(m, Show)])
-    assert 38 == len([m for m in moves if isinstance(m, ScoutAndShow)])
-    assert 27 == len([m for m in moves if isinstance(
+    assert 36 == len([m for m in moves if isinstance(m, ScoutAndShow)])
+    assert 25 == len([m for m in moves if isinstance(
         m, ScoutAndShow) and m.show.length == 1])
     assert 10 == len([m for m in moves if isinstance(
         m, ScoutAndShow) and m.show.length == 2])
@@ -132,7 +142,7 @@ def test_GameState():
     game_state = GameState(5, 1)
     assert not game_state.table
     assert not game_state.initial_flip_executed
-    game_state.maybe_flip_hand([lambda _: False]*5)
+    game_state.maybe_flip_hand([lambda _: False] * 5)
     assert game_state.scores[1] == -9
     game_state.move(Show(0, 1))
     assert game_state.scores[1] == -8
@@ -144,7 +154,7 @@ def test_GameState():
     # determinization, and ensure it is a valid representation.
     game_state = GameState(5, 0)
     card1 = game_state.hands[0][0]
-    game_state.maybe_flip_hand([lambda _: False]*5)
+    game_state.maybe_flip_hand([lambda _: False] * 5)
     game_state.move(Show(0, 1))
     game_state.move(Scout(True, False, 0))
     card2 = game_state.hands[2][0]
@@ -154,7 +164,7 @@ def test_GameState():
     game_state.move(Show(4, 1))
     game_state.move(ScoutAndShow(Scout(True, True, 6), Show(6, 1)))
     game_state.move(Scout(True, True, 2))
-    
+
     info_state = game_state.info_state()
     determinization = GameState.sample_from_info_state(info_state)
     assert [len(h) for h in determinization.hands] == [len(h)
@@ -163,4 +173,14 @@ def test_GameState():
     assert card1 == determinization.hands[1][0]
     assert (card2[1], card2[0]) == determinization.hands[3][3]
     assert card3 == determinization.hands[1][2]
-    assert info_state.hand == determinization.hands[2]
+    assert info_state.hand == tuple(determinization.hands[2])
+
+
+def test_IsmctsPlayer():
+    game_state = GameState(5, 1)
+    game_state.maybe_flip_hand([lambda _: True] * 5)
+    ismcts_player = IsmctsPlayer(5, 2)
+    game_state.move(Show(0, 1))
+    move = ismcts_player.select_move(game_state.info_state())
+    game_state.move(move)
+

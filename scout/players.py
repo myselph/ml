@@ -1,12 +1,12 @@
 # A Scout (card game) simulator.
 import random
-from dataclasses import dataclass
 from common import Player, InformationState, Scout, Show, ScoutAndShow, Move, Util, Card
+from collections.abc import Sequence
 
 
 class RandomPlayer(Player):
     # A baseline player that randomly selects from the possible moves.
-    def flip_hand(self, hand: list[Card]) -> bool:
+    def flip_hand(self, hand: Sequence[Card]) -> bool:
         return random.choice([True, False])
 
     def select_move(self, info_state: InformationState) -> Move:
@@ -16,14 +16,20 @@ class RandomPlayer(Player):
 class GreedyShowPlayer(Player):
     # A player that maximizes for gettng rid of its cards (ie it picks the
     # highest Show and ScoutAndShow moves).
-    def flip_hand(self, hand: list[Card]) -> bool:
+    def flip_hand(self, hand: Sequence[Card]) -> bool:
         return random.choice([True, False])
 
     def select_move(self, info_state: InformationState) -> Move:
+        # The linter really has a hard time with this function, and I don't
+        # understand why, hence some ignore statements. I tried to improve 
+        # things by sprinkling asserts over the function but that didn't help
+        # and just makes the code slower. And I didn't want to go as far as
+        # initializing next_move with nonsensical values to make pylance happy.
         moves = info_state.possible_moves()
         scouts = [m for m in moves if isinstance(m, Scout)]
         shows = [m for m in moves if isinstance(m, Show)]
         scout_and_shows = [m for m in moves if isinstance(m, ScoutAndShow)]
+        next_move = None
         if scouts:
             next_move = random.choice(scouts)
         if shows:
@@ -31,22 +37,22 @@ class GreedyShowPlayer(Player):
         if scout_and_shows:
             best_scout_and_show = max(
                 scout_and_shows, key=lambda m: m.show.length)
-            # Pick the Scout&Show over a Scout only if we to dump at least 3
+            # Pick the Scout&Show over a Show only if we to dump at least 3
             # cards more - because we a) increase our hand by one b) can S&S
             # only once c) another player scores points.
-            if not shows or next_move.length < best_scout_and_show.show.length + 2:
+            if not shows or next_move.length < best_scout_and_show.show.length + 2: #type:ignore
                 next_move = best_scout_and_show
+        assert next_move
         return next_move
-
 
 class GreedyShowPlayerWithFlip(GreedyShowPlayer):
     # Like GreedyShowPlayer, but with non-random flip - improves performance.
-    def flip_hand(self, hand: list[Card]) -> bool:
+    def flip_hand(self, hand: Sequence[Card]) -> bool:
         up_value = self._hand_value([h[0] for h in hand])
         down_value = self._hand_value([h[1] for h in hand])
         return up_value < down_value
 
-    def _count_groups_and_runs(self, values: list[int]):
+    def _count_groups_and_runs(self, values: Sequence[int]):
         group_counts = [0] * len(values)
         run_counts = [0] * len(values)
         for start_pos in range(len(values)):  # 0, 1, N-1
@@ -57,7 +63,7 @@ class GreedyShowPlayerWithFlip(GreedyShowPlayer):
                     run_counts[meld_size - 1] += 1
         return group_counts, run_counts
 
-    def _hand_value(self, values: list[int]):
+    def _hand_value(self, values: Sequence[int]):
         # Compute a heuristic value of this hand, the better, the higher.
         # This is *super* heuristic; I don't even count for overlaps (eg a
         # triple counts as both triple and double and single).
@@ -89,16 +95,9 @@ class PlanningPlayer(GreedyShowPlayerWithFlip):
 
     def select_move(self, info_state: InformationState) -> Move:
         moves = info_state.possible_moves()
-        best_value = None
-        best_move = None
-        for move in moves:
-            value = self._value(info_state, move)
-            if not best_value or value > best_value:
-                best_value = value
-                best_move = move
-        return best_move
+        return max(moves, key=lambda m: self._value(info_state, m))
 
-    def _value(self, info_state: InformationState, move: Move):
+    def _value(self, info_state: InformationState, move: Move) -> float:
         # Calculates a heuristic value for the state of the game after the given
         # move. This involved simulating every move and calculating the new
         # value.
@@ -122,7 +121,7 @@ class PlanningPlayer(GreedyShowPlayerWithFlip):
     def _simulate_scout(
             self,
             hand_values: list[int],
-            table: list[Card],
+            table: tuple[Card, ...],
             scout: Scout):
         card = table[0] if scout.first else table[-1]
         card_value = card[1] if scout.flip else card[0]

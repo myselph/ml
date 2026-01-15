@@ -5,8 +5,23 @@ from abc import abstractmethod
 from typing import Callable
 from game_state import GameState
 from common import Player
-from players import PlanningPlayer, GreedyShowPlayerWithFlip
+from players import PlanningPlayer, GreedyShowPlayerWithFlip, RandomPlayer
+from ismcts_player import IsmctsPlayer
+import argparse
 
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--num_games",
+    type=int,
+    help="Number of games per setting",
+    default=100
+)
+parser.add_argument(
+    '--num_rollouts', 
+    type=lambda s: [int(item) for item in s.split(',')],
+    help="Comma-separated list of the number of MCTS rollouts to run"
+)
+args = parser.parse_args()
 
 # Play a single round - that is, a single deck of cards - and return
 # the scores.
@@ -21,11 +36,10 @@ def play_round(players: list[Player], dealer: int) -> list[int]:
         current_player = (current_player + 1) % len(players)
     return game_state.scores
 
-# Play a game - that is num_players rounds, with each player dealing once.
-# Return the cumulative scores.
-
 
 def play_game(players: list[Player]) -> list[int]:
+    # Play a game - that is num_players rounds, with each player dealing once.
+    # Return the cumulative scores.
     scores = []
     for dealer in range(0, len(players)):
         scores.append(play_round(players, dealer))
@@ -35,7 +49,11 @@ def play_game(players: list[Player]) -> list[int]:
 # Let two Player implementations compete against each other in a tournament.
 # Returns ratio of player A wins. The precise definition of that metric is
 # implementation specific, see below.
-def play_tournament(player_a_factory_fn: Callable[[], Player], player_b_factory_fn: Callable[[], Player]) -> float:
+def play_tournament(
+    player_a_factory_fn: Callable[[],
+                                  Player],
+    player_b_factory_fn: Callable[[],
+                                  Player]) -> float:
     # For now: let one player A compete against 4 player B's. There's a lot of
     # other types of setups we could use, such as 2A vs 3B, with different
     # player sequences; other numbers of players (3, 4); or average between
@@ -46,27 +64,35 @@ def play_tournament(player_a_factory_fn: Callable[[], Player], player_b_factory_
     # of A by 4 before computing the ratio.
     # At the very least, this should be symmetric, ie playing A against B should
     # give the complement (1-p) of playing B against A.
-    players = [player_a_factory_fn()] + [player_b_factory_fn()] * 4
-    wins = [0]*len(players)
+    players = [player_a_factory_fn()] + [player_b_factory_fn()
+                                         for _ in range(4)]
+    wins = [0] * len(players)
 
     start_time = time.time()
-    num_games = 200
+    num_games = args.num_games
     for reps in range(0, num_games):
         scores = play_game(players)
         winner_index = max(range(len(scores)), key=lambda i: scores[i])
         wins[winner_index] += 1
     end_time = time.time()
 
-    a_win_rate = wins[0] / (wins[0] + sum(wins[1:])/4)
+    a_win_rate = wins[0] / (wins[0] + sum(wins[1:]) / 4)
     wins = list(map(lambda i: i / sum(wins), wins))
     print(
-        f"wins %: {wins}, a_win_rate normalized: {a_win_rate:.3f}, dt/game: {(end_time-start_time)/num_games}")
+        f"wins %: {wins}, a_win_rate normalized: {
+            a_win_rate:.3f}, dt/game: {
+            (
+                end_time -
+                start_time) /
+            num_games}")
     return a_win_rate
 
 
 def main():
-    play_tournament(lambda: PlanningPlayer(),
-                    lambda: GreedyShowPlayerWithFlip())
+    for i in args.num_rollouts:
+        awr = play_tournament(lambda: IsmctsPlayer(5, i),
+                        lambda: GreedyShowPlayerWithFlip())
+        print(f"{i}: {awr}")
 
 
 if __name__ == '__main__':
