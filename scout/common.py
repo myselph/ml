@@ -34,13 +34,10 @@ class Util:
     # Utility functions to operate on a set or sets of cards.
     @staticmethod
     def is_group(cards: Sequence[int]):
-        # Check if it is a group (cards with the same )
-        is_group = True
         for i in range(1, len(cards)):
             if cards[i] != cards[0]:
-                is_group = False
-                break
-        return is_group
+                return False
+        return True
 
     @staticmethod
     def is_run(cards: Sequence[int]):
@@ -111,11 +108,9 @@ class Util:
             move: Move):
         hand_values = [h[0] for h in hand]
         table_values = [t[0] for t in table]
-        if isinstance(move, Scout):
-            return Util.is_scout_valid(hand_values, table_values, move)
-        elif isinstance(move, Show):
+        if isinstance(move, Show):
             return Util.is_show_valid(hand_values, table_values, move)
-        else:  # Scout & Show
+        elif isinstance(move, ScoutAndShow):  # Scout & Show
             if not can_scout_and_show:
                 return False
             if not Util.is_scout_valid(hand_values, table_values, move.scout):
@@ -131,6 +126,8 @@ class Util:
             hand_values.insert(move.scout.insertPos, scouted_value)
             # Check the Show move.
             return Util.is_show_valid(hand_values, table_values, move.show)
+        else:
+            return Util.is_scout_valid(hand_values, table_values, move)
 
 
 @dataclass(frozen=True)
