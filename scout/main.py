@@ -8,6 +8,7 @@ from common import Player
 from players import PlanningPlayer, GreedyShowPlayerWithFlip, RandomPlayer
 from ismcts_player import IsmctsPlayer
 import argparse
+import random
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -19,9 +20,19 @@ parser.add_argument(
 parser.add_argument(
     '--num_rollouts', 
     type=lambda s: [int(item) for item in s.split(',')],
+    default=[100],
     help="Comma-separated list of the number of MCTS rollouts to run"
 )
+parser.add_argument(
+    '--fix_seed',
+    type=bool,
+    default=False,
+    help="Fix the RNG seed - useful for comparing performance measurements"
+)
 args = parser.parse_args()
+
+if args.fix_seed:
+    random.seed(10)
 
 # Play a single round - that is, a single deck of cards - and return
 # the scores.
@@ -91,7 +102,7 @@ def play_tournament(
 def main():
     for i in args.num_rollouts:
         awr = play_tournament(lambda: IsmctsPlayer(5, i),
-                        lambda: GreedyShowPlayerWithFlip())
+                        lambda: PlanningPlayer())
         print(f"{i}: {awr}")
 
 

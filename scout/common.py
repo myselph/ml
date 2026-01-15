@@ -205,6 +205,9 @@ class InformationState:
         # Scout and Show candidates.
         # This could probably be sped up somehow.
         scout_and_shows = []
+        # TODO: More coallescing - when inserting a scouted card right next to
+        # a sequence that will be shown, it doesn't matter if we insert left
+        # or right.
         if self.can_scout_and_show[self.current_player]:
             # Generate possible ranges for the Show moves - like above, but
             # assuming the table has one card less and our hand has one card

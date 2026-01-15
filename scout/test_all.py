@@ -114,12 +114,12 @@ def test_InformationState():
     assert 21 == len([m for m in moves if isinstance(m, ScoutAndShow)])
 
     # Expected: 12 scout moves; one show move (pair); and for S&S:
-    # for each of the 12 scout moves, two single card shows (4&5)
+    # for each of the 12 scout moves, two single card shows (4&5) -> 24
     # for 1 out of 3 of the scout "3" moves, a single card show (3),
     # because of coalescing (two of the three insert positions are ignored)
     # for 8 of the scout moves, a double card show (4&5) - 8 scouts exist that do not break up that sequence
     # when inserting the 3 before the 4, two new show moves - "3,4" and "3,4,5"
-    # when inserting the 3 after the for, a new double "4, 3".
+    # when inserting the 3 after the 4, a new double "4, 3".
     # So 36 ScoutAndShow moves.
     info_state = InformationState(
         5, 0, 0, 0, hand, ((2, 1), (3, 1)), (2, 2, 2, 2, 2), (0, 0, 0, 0, 0),
