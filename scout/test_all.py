@@ -7,6 +7,43 @@ from ismcts_player import IsmctsPlayer
 
 
 def test_utils():
+    # Tests for the group and run finding functions.
+    assert not Util._find_groups([])
+    assert not Util._find_groups([1])
+    assert Util._find_groups([1], min_length=1) == {(0, 0)}
+    assert Util._find_groups([1, 1]) == {(0, 1)}
+    assert Util._find_groups([1, 1, 1]) == {(0, 2), (0, 1), (1, 2)}
+    assert Util._find_groups([1, 1, 1], min_length=3) == {(0, 2)}
+    assert Util._find_groups([1, 1, 2]) == {(0, 1)}
+    assert Util._find_groups([2, 1, 1]) == {(1, 2)}
+    assert Util._find_groups([2, 1, 1, 1, 1, 3, 5, 5, 2, 2, 4]) == {
+        (1, 4), (6, 7), (8, 9), (1, 2), (2, 3), (3, 4), (1, 3), (2, 4)}
+
+    # Tests for runs
+    assert not Util._find_runs([])
+    assert not Util._find_runs([1])
+    assert Util._find_runs([1], min_length=1) == {(0, 0)}
+    assert Util._find_runs([1, 2]) == {(0, 1)}
+    assert Util._find_runs([1, 2, 3]) == {(0, 2), (0, 1), (1, 2)}
+    assert Util._find_runs([1, 2, 3], min_length=3) == {(0, 2)}
+    assert Util._find_runs([1, 2, 4]) == {(0, 1)}
+    assert Util._find_runs([4, 2, 1]) == {(1, 2)}
+    assert Util._find_runs([8, 1, 2, 3, 4, 7, 3, 2, 4, 5, 9]) == {
+        (1, 4), (6, 7), (8, 9), (1, 2), (2, 3), (3, 4), (1, 3), (2, 4)}
+
+    # Tests for find_shows.
+    assert Util.find_shows([1, 1, 2], []) == {Show(
+        0, 1), Show(1, 1), Show(2, 1), Show(0, 2), Show(1, 2)}
+    assert Util.find_shows([1, 1, 2], [1]) == {
+        Show(2, 1), Show(0, 2), Show(1, 2)}
+    assert Util.find_shows([1, 1, 2], [3]) == {Show(0, 2), Show(1, 2)}
+    assert not Util.find_shows([1, 1, 2], [1, 1])
+    assert Util.find_shows([1, 1, 2], [2, 3]) == {Show(0, 2)}
+    assert Util.find_shows([5, 4, 3, 2], [6, 6, 6]) == {Show(0, 4)}
+    assert Util.find_shows([5, 4, 3, 2], [6, 5, 4]) == {Show(0, 4)}
+    assert Util.find_shows([5, 4, 3, 2], [1, 2, 3, 4]) == {Show(0, 4)}
+    assert Util.find_shows([5, 4, 3, 2], [4, 3, 2, 1]) == {Show(0, 4)}
+
     game_state = GameState(5, 0)
     # Tests for is_group, is_run.
     assert Util.is_group([])
@@ -91,53 +128,63 @@ def test_InformationState():
     info_state = InformationState(
         5, 0, 0, -1, hand, (), (2, 2, 2, 2, 2), (0, 0, 0, 0, 0),
         (True, True, True, True, True), ())
-    assert info_state.possible_moves() == (Show(0, 1), Show(0, 2), Show(1, 1))
+    assert set(
+        info_state.possible_moves()) == {
+        Show(
+            0, 1), Show(
+                0, 2), Show(
+                    1, 1)}
 
     # 2 cards in hand, 1 on table -> 6 Scouts, 3 Shows (4, 5, (4,5)),
     # For Scout & Shows:
-    # 6 scout moves; for each, 3 single card shows -> 18.
-    # However, since we coalesce some of them (see possible_moves()),
-    # it's just 14 - for each of the flip/noFlip option, there are
-    # 3 insert places, but two of them get ignored if we show that
-    # scouted card right away -> 18-4=14
-    # Also:
-    # 4 (4,5) shows (insert 1 or 3, left or right)
-    # 1 (3,4,5) show
-    # 1 (3,4) show, one (4,3) show
-    # So overall, 21 S&S moves.
+    # There's a lot of coalescing going on inside possible_moves, and it's
+    # best to just enumerate the possible options:
+    # - single card shows:
+    #   - scout 3, end up with 3,4; 4,3; 3,5; 5,3; 4,5 -> 5
+    #   - scout 1, end up with 1,4; 4,1; 1,5; 5,1; 4,5 -> 5
+    # - two card shows:
+    #   - show 3,4 or 4,3; end up with 5 -> 2
+    #   - show 4,5, end up with 1 or 3 -> 2
+    # - three card show - end up with nothing -> 1
+    # So overall, 15 S&S moves.
     info_state = InformationState(
         5, 0, 0, -1, hand, ((3, 1),), (2, 2, 2, 2, 2), (0, 0, 0, 0, 0),
         (True, True, True, True, True), ())
     moves = info_state.possible_moves()
     assert 6 == len([m for m in moves if isinstance(m, Scout)])
     assert 3 == len([m for m in moves if isinstance(m, Show)])
-    assert 21 == len([m for m in moves if isinstance(m, ScoutAndShow)])
+    assert 15 == len([m for m in moves if isinstance(m, ScoutAndShow)])
 
     # Expected: 12 scout moves; one show move (pair); and for S&S:
-    # for each of the 12 scout moves, two single card shows (4&5) -> 24
-    # for 1 out of 3 of the scout "3" moves, a single card show (3),
-    # because of coalescing (two of the three insert positions are ignored)
-    # for 8 of the scout moves, a double card show (4&5) - 8 scouts exist that do not break up that sequence
-    # when inserting the 3 before the 4, two new show moves - "3,4" and "3,4,5"
-    # when inserting the 3 after the 4, a new double "4, 3".
-    # So 36 ScoutAndShow moves.
+    # Again, lots of coalescing, let's enumerate possible end states:
+    # - single card shows:
+    #   - scout 2 -> hand 2,4; 4,2; 2,5; 5,2 -> 4
+    #   - scout 1 of (2,1) -> hand 1,4; 4,1; 1,5; 5,1 -> 4
+    #   - scout 1 of (3,1) -> hand 1,4; 4,1; 1,5; 5,1 -> 4.
+    #   - scout 3 -> hand 3,4; 4,3; 3,5; 5,3; 4,5 -> 5
+    # - two card shows:
+    #   - scout 2 -> show 4,5 -> 1
+    #   - scout 3 -> show 4,5; 3,4; 4,3 -> 3
+    #   - scout 1 -> show 4,5 -> 2 (we can scout two 1s)
+    # - three card shows: 1
+    # Thus, we expect 24 Scout and Show moves.
     info_state = InformationState(
         5, 0, 0, 0, hand, ((2, 1), (3, 1)), (2, 2, 2, 2, 2), (0, 0, 0, 0, 0),
         (True, True, True, True, True), ())
     moves = info_state.possible_moves()
     assert 12 == len([m for m in moves if isinstance(m, Scout)])
     assert 1 == len([m for m in moves if isinstance(m, Show)])
-    assert 36 == len([m for m in moves if isinstance(m, ScoutAndShow)])
-    assert 25 == len([m for m in moves if isinstance(
+    assert 24 == len([m for m in moves if isinstance(m, ScoutAndShow)])
+    assert 17 == len([m for m in moves if isinstance(
         m, ScoutAndShow) and m.show.length == 1])
-    assert 10 == len([m for m in moves if isinstance(
+    assert 6 == len([m for m in moves if isinstance(
         m, ScoutAndShow) and m.show.length == 2])
     assert 1 == len([m for m in moves if isinstance(
         m, ScoutAndShow) and m.show.length == 3])
 
 
 def test_GameState():
-    # GameState tests. TODO: Add test c'tor to inject my own decks;
+    # GameState tests. Should probably add test c'tor to inject my own decks;
     # for now, just test scouting and showing and that scoring works.
     game_state = GameState(5, 1)
     assert not game_state.table
@@ -183,4 +230,3 @@ def test_IsmctsPlayer():
     game_state.move(Show(0, 1))
     move = ismcts_player.select_move(game_state.info_state())
     game_state.move(move)
-

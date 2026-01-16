@@ -100,7 +100,7 @@ def ismcts(node: Node, game_state: GameState, players: list[Player],
     possible_moves = info_state.possible_moves()
     node.children[move] = {}
     node.children[move][hash] = Node(
-        possible_moves[:], list(possible_moves), {}, {}, {})
+        tuple(possible_moves), list(possible_moves), {}, {}, {})
     node = node.children[move][hash]
 
     # 3. Roll-out phase - finish the game; don't add new nodes, just finish
@@ -164,9 +164,9 @@ class IsmctsPlayer(Player):
     _move_time_limit_seconds: int
 
     # TODOs:
-    # 1. Do a perf run to eliminate bottlenecks
-    # 2. check the code again
+    # 1. Done: Do a perf run to eliminate bottlenecks
     # 3. Play against a better player - PlanningPlayer?
+    # 3. check the code again
 
     def __init__(
             self,

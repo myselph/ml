@@ -32,6 +32,127 @@ type Move = Scout | Show | ScoutAndShow
 
 class Util:
     # Utility functions to operate on a set or sets of cards.
+
+    @staticmethod
+    def _find_groups(
+            x: list[int], min_length: int = 2) -> set[tuple[int, int]]:
+        # Given a sequence of integers, computes all groups (sub sequences of equal
+        # numbers) of size min_length or larger.
+        # Algorithm: Find largest groups in one pass through sequence; then
+        # further add smaller groups by spliting those large ones into smaller sets
+        # if possible.
+        if len(x) == 0:
+            return set()
+
+        groups: set[tuple[int, int]] = set()
+        left = 0
+        right = 0
+
+        while x[left] == x[right]:
+            right = right + 1
+            if right == len(x):
+                if right - left >= min_length:
+                    groups.add((left, right - 1))
+                break
+            elif x[left] != x[right]:
+                # could be single length. Could add length check here.
+                # Could also expand here.
+                if right - left >= min_length:
+                    groups.add((left, right - 1))
+                left = right
+
+        # Create subsets from larger sets.
+        new_groups: set[tuple[int, int]] = set()
+        for pos in groups:
+            original_group_len = pos[1] - pos[0] + 1
+            for group_len in range(min_length, original_group_len):
+                for i in range(pos[0], pos[1] + 2 - group_len):
+                    new_groups.add((i, i + group_len - 1))
+
+        return groups | new_groups
+
+    @staticmethod
+    def _find_runs(x: list[int], min_length: int = 2) -> set[tuple[int, int]]:
+        # Given a sequence of integers, find all runs (ascending or descending)
+        # of size min_length or larger.
+        if len(x) == 0:
+            return set()
+
+        runs: set[tuple[int, int]] = set()
+        left = 0
+        right = 0
+
+        # Pass 1 - find ascending runs.
+        while x[left] == x[right] - (right - left):
+            right = right + 1
+            if right == len(x):
+                if right - left >= min_length:
+                    runs.add((left, right - 1))
+                break
+            elif x[left] != x[right] - (right - left):
+                if right - left >= min_length:
+                    runs.add((left, right - 1))
+                left = right
+
+        # Pass 2 - find descencing runs
+        left = 0
+        right = 0
+        while x[left] == x[right] + (right - left):
+            right = right + 1
+            if right == len(x):
+                if right - left >= min_length:
+                    runs.add((left, right - 1))
+                break
+            elif x[left] != x[right] + (right - left):
+                if right - left >= min_length:
+                    runs.add((left, right - 1))
+                left = right
+
+        # Create subsets from larger sets.
+        new_runs: set[tuple[int, int]] = set()
+        for pos in runs:
+            original_run_len = pos[1] - pos[0] + 1
+            for run_len in range(min_length, original_run_len):
+                for i in range(pos[0], pos[1] + 2 - run_len):
+                    new_runs.add((i, i + run_len - 1))
+
+        return runs | new_runs
+
+    @staticmethod
+    def find_shows(
+            hand_values: list[int],
+            table_values: list[int]) -> set[Show]:
+        show_min_group_length = max(1, len(table_values))
+        table_is_group = False if (not table_values) \
+            or table_values[0] != table_values[-1] else True
+        if not table_values or table_is_group:
+            # If the table is empty, we look for groups of size 1+ and runs of
+            # size 2+ so as to avoid double counting single cards as runs *and*
+            # groups.
+            show_min_run_length = show_min_group_length + 1
+        else:  # This means the table is a run of length >= 2.
+            show_min_run_length = show_min_group_length
+
+        groups = Util._find_groups(hand_values, show_min_group_length)
+        runs = Util._find_runs(hand_values, show_min_run_length)
+        if not table_values:
+            return {Show(x[0], x[1] - x[0] + 1) for x in groups | runs}
+        shows = []
+        for g in groups:
+            show_cand = Show(g[0], g[1] - g[0] + 1)
+            if show_cand.length > len(table_values) \
+               or not table_is_group or hand_values[g[0]] > table_values[0]:
+                shows.append(show_cand)
+
+        for r in runs:
+            show_cand = Show(r[0], r[1] - r[0] + 1)
+            if show_cand.length > len(table_values):
+                shows.append(show_cand)
+            elif not table_is_group \
+                    and max(hand_values[r[0]], hand_values[r[1]]) > max(table_values[0], table_values[-1]):
+                shows.append(show_cand)
+        return set(shows)
+
     @staticmethod
     def is_group(cards: Sequence[int]):
         for i in range(1, len(cards)):
@@ -57,6 +178,13 @@ class Util:
                 break
         return is_descending_run
 
+    @staticmethod
+    def is_scout_valid(
+            hand_values: Sequence[int],
+            table_values: Sequence[int],
+            scout: Scout):
+        return table_values and scout.insertPos >= 0 and scout.insertPos <= len(
+            hand_values)
 
     @staticmethod
     def is_show_valid(
@@ -93,7 +221,6 @@ class Util:
         else:
             return not table_is_group and max(table_values) < max(meld_values)
 
-
     @staticmethod
     def is_move_valid(
             hand: Sequence[Card],
@@ -108,7 +235,7 @@ class Util:
             if not can_scout_and_show:
                 return False
             # Scout valid?
-            if not table_values or move.scout.insertPos < 0 or move.scout.insertPos > len(hand_values):
+            if not if not Util.is_scout_valid(hand_values, table_values, move.scout):
                 return False
             # Simulate the Scout move
             if move.scout.first:  # pick first card or last?
@@ -122,7 +249,7 @@ class Util:
             # Check the Show move.
             return Util.is_show_valid(hand_values, table_values, move.show)
         else:
-            return table_values and move.insertPos >= 0 and move.insertPos <= len(hand_values)
+            return Util.is_scout_valid(hand_values, table_values, move.scout)
 
 
 @dataclass(frozen=True)
@@ -170,6 +297,11 @@ class InformationState:
     can_scout_and_show: tuple[bool, ...]
     history: tuple[RecordedMove, ...]
 
+    # This function should return a set to reflect that order doesn't matter
+    # and that there should be no duplicates. However, the callers typically
+    # sample from the returned collection, and that can't be done easily with
+    # sets (requires conversion to tuple or list). I'm therefore returning a
+    # tuple - that still allows for hashing, but also allows for sampling.
     def possible_moves(self) -> tuple[Move, ...]:
         # Return a list of legal moves the player can make.
         # First, generate Scout candidates. We do not call is_move_valid to
@@ -186,44 +318,40 @@ class InformationState:
         else:
             scouts = []
 
-        # Show candidates - generate possible ones (at least as many cards as
-        # there are on the table), then filter by validity (group or sequence?)
-        show_min_length = max(1, len(self.table)) # Do not create "empty" shows.
-        show_candidates = [Show(start, length)
-                           for start in range(0, len(self.hand) - (len(self.table) - 1))
-                           for length in range(show_min_length, len(self.hand) + 1 - start)]
-        shows = [s for s in show_candidates if Util.is_move_valid(
-                 self.hand, self.table, self.can_scout_and_show[self.current_player], s)]
+        # Show candidates - generate possible ones in an efficient manner, then
+        # filter out those (and only those) that have the same length as the
+        # table, but won't beat it. It is crucial that this code runs.
+        hand_values = [c[0] for c in self.hand]
+        table_values = [c[0] for c in self.table]
+        shows = list(Util.find_shows(hand_values, table_values))
 
         # Scout and Show candidates.
-        # This could probably be sped up somehow.
         scout_and_shows = []
-        # TODO: More coallescing - when inserting a scouted card right next to
-        # a sequence that will be shown, it doesn't matter if we insert left
-        # or right.
         if self.can_scout_and_show[self.current_player]:
-            # Generate possible ranges for the Show moves - like above, but
-            # assuming the table has one card less and our hand has one card
-            # more from the Scout move. The index math below hurts my head.
-            show_min_length = max(1, len(self.table)-1) # Do not create "empty" shows.
-            show_moves = [Show(start, length)
-                          for start in range(0, len(self.hand) - (len(self.table) - 1 - 1) + 1)
-                          for length in range(show_min_length, len(self.hand) + 1 - start + 1)]
-            coalesced_scouts: list[tuple[bool, bool]] = []
             for scout in scouts:
+                # Post-scout deck
+                assert self.table  # Make the linter happy...
+                scouted_card = self.table[0] if scout.first else self.table[-1]
+                scouted_value = scouted_card[1] if scout.flip else scouted_card[0]
+                new_hand_values = hand_values[:scout.insertPos] + \
+                    [scouted_value] + hand_values[scout.insertPos:]
+                new_table_values = table_values[1:] \
+                    if scout.first else table_values[:-1]
+                show_moves = Util.find_shows(new_hand_values, new_table_values)
                 for show in show_moves:
-                    move = ScoutAndShow(scout, show)
-                    if Util.is_move_valid(
-                            self.hand, self.table, self.can_scout_and_show[self.current_player], move):
-                        # Coalesce Scout & Show moves: If we scout a card and
-                        # play it again right away, the insert position does not
-                        # matter -> only keep the first one we encounter.
-                        if show.startPos == scout.insertPos and show.length == 1:
-                            if (scout.first, scout.flip) in coalesced_scouts:
-                                continue
-                            else:
-                                coalesced_scouts.append((scout.first, scout.flip))
-                        scout_and_shows.append(move)
+                    # 1. If we scout a card and play it again right away, the
+                    # insert position does not matter -> skip insert positions
+                    # other than 0.
+                    if show.startPos == scout.insertPos and show.length == 1 \
+                            and scout.insertPos != 0:
+                        continue
+                    # 2. If we scout a card and insert it right next to the
+                    # Show sequence, it does not matter if we insert it left
+                    # or right of that sequence -> skip the left insert. We know
+                    # there is a matching right insert.
+                    if scout.insertPos == show.startPos - 1:
+                        continue
+                    scout_and_shows.append(ScoutAndShow(scout, show))
 
         return tuple(scouts + shows + scout_and_shows)
 
