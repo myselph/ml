@@ -57,13 +57,6 @@ class Util:
                 break
         return is_descending_run
 
-    @staticmethod
-    def is_scout_valid(
-            hand_values: Sequence[int],
-            table_values: Sequence[int],
-            scout: Scout):
-        return table_values and scout.insertPos >= 0 and scout.insertPos <= len(
-            hand_values)
 
     @staticmethod
     def is_show_valid(
@@ -100,6 +93,7 @@ class Util:
         else:
             return not table_is_group and max(table_values) < max(meld_values)
 
+
     @staticmethod
     def is_move_valid(
             hand: Sequence[Card],
@@ -113,7 +107,8 @@ class Util:
         elif isinstance(move, ScoutAndShow):  # Scout & Show
             if not can_scout_and_show:
                 return False
-            if not Util.is_scout_valid(hand_values, table_values, move.scout):
+            # Scout valid?
+            if not table_values or move.scout.insertPos < 0 or move.scout.insertPos > len(hand_values):
                 return False
             # Simulate the Scout move
             if move.scout.first:  # pick first card or last?
@@ -127,7 +122,7 @@ class Util:
             # Check the Show move.
             return Util.is_show_valid(hand_values, table_values, move.show)
         else:
-            return Util.is_scout_valid(hand_values, table_values, move)
+            return table_values and move.insertPos >= 0 and move.insertPos <= len(hand_values)
 
 
 @dataclass(frozen=True)
@@ -193,11 +188,12 @@ class InformationState:
 
         # Show candidates - generate possible ones (at least as many cards as
         # there are on the table), then filter by validity (group or sequence?)
+        show_min_length = max(1, len(self.table)) # Do not create "empty" shows.
         show_candidates = [Show(start, length)
                            for start in range(0, len(self.hand) - (len(self.table) - 1))
-                           for length in range(len(self.table), len(self.hand) + 1 - start)]
+                           for length in range(show_min_length, len(self.hand) + 1 - start)]
         shows = [s for s in show_candidates if Util.is_move_valid(
-            self.hand, self.table, self.can_scout_and_show[self.current_player], s)]
+                 self.hand, self.table, self.can_scout_and_show[self.current_player], s)]
 
         # Scout and Show candidates.
         # This could probably be sped up somehow.
@@ -209,9 +205,10 @@ class InformationState:
             # Generate possible ranges for the Show moves - like above, but
             # assuming the table has one card less and our hand has one card
             # more from the Scout move. The index math below hurts my head.
+            show_min_length = max(1, len(self.table)-1) # Do not create "empty" shows.
             show_moves = [Show(start, length)
                           for start in range(0, len(self.hand) - (len(self.table) - 1 - 1) + 1)
-                          for length in range(len(self.table) - 1, len(self.hand) + 1 - start + 1)]
+                          for length in range(show_min_length, len(self.hand) + 1 - start + 1)]
             coalesced_scouts: list[tuple[bool, bool]] = []
             for scout in scouts:
                 for show in show_moves:
