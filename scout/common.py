@@ -235,7 +235,7 @@ class Util:
             if not can_scout_and_show:
                 return False
             # Scout valid?
-            if not if not Util.is_scout_valid(hand_values, table_values, move.scout):
+            if not Util.is_scout_valid(hand_values, table_values, move.scout):
                 return False
             # Simulate the Scout move
             if move.scout.first:  # pick first card or last?
@@ -249,7 +249,7 @@ class Util:
             # Check the Show move.
             return Util.is_show_valid(hand_values, table_values, move.show)
         else:
-            return Util.is_scout_valid(hand_values, table_values, move.scout)
+            return Util.is_scout_valid(hand_values, table_values, move)
 
 
 @dataclass(frozen=True)
