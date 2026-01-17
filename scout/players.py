@@ -21,7 +21,7 @@ class GreedyShowPlayer(Player):
 
     def select_move(self, info_state: InformationState) -> Move:
         # The linter really has a hard time with this function, and I don't
-        # understand why, hence some ignore statements. I tried to improve 
+        # understand why, hence some ignore statements. I tried to improve
         # things by sprinkling asserts over the function but that didn't help
         # and just makes the code slower. And I didn't want to go as far as
         # initializing next_move with nonsensical values to make pylance happy.
@@ -40,10 +40,11 @@ class GreedyShowPlayer(Player):
             # Pick the Scout&Show over a Show only if we to dump at least 3
             # cards more - because we a) increase our hand by one b) can S&S
             # only once c) another player scores points.
-            if not shows or next_move.length < best_scout_and_show.show.length + 2: #type:ignore
+            if not shows or next_move.length < best_scout_and_show.show.length + 2:  # type:ignore
                 next_move = best_scout_and_show
         assert next_move
         return next_move
+
 
 class GreedyShowPlayerWithFlip(GreedyShowPlayer):
     # Like GreedyShowPlayer, but with non-random flip - improves performance.
@@ -52,34 +53,17 @@ class GreedyShowPlayerWithFlip(GreedyShowPlayer):
         down_value = self._hand_value([h[1] for h in hand])
         return up_value < down_value
 
-    def _count_groups_and_runs(self, values: Sequence[int]):
-        group_counts = [0] * len(values)
-        run_counts = [0] * len(values)
-        for start_pos in range(len(values)):  # 0, 1, N-1
-            for meld_size in range(1, len(values) + 1 - start_pos):
-                if Util.is_group(values[start_pos:start_pos + meld_size]):
-                    group_counts[meld_size - 1] += 1
-                if Util.is_run(values[start_pos:start_pos + meld_size]):
-                    run_counts[meld_size - 1] += 1
-        return group_counts, run_counts
-
     def _hand_value(self, values: Sequence[int]):
         # Compute a heuristic value of this hand, the better, the higher.
         # This is *super* heuristic; I don't even count for overlaps (eg a
         # triple counts as both triple and double and single).
-        (group_counts, run_counts) = self._count_groups_and_runs(values)
+        groups = Util._find_groups(list(values), 2)
+        runs = Util._find_runs(list(values), 2)
         value = 0
-        for i, c in enumerate(run_counts):
-            # ignore the singles
-            if i == 0 or c == 0:
-                continue
-            value += i * c
-        for i, c in enumerate(group_counts):
-            if i == 0 or c == 0:
-                continue
-            # groups count more than runs of the same size, but not as much as
-            # a longer run.
-            value += (i + 0.5) * c
+        for r in runs:
+            value += r[1] - r[0] + 1
+        for g in groups:
+            value += g[1] - g[0] + 1.5
         return value
 
 

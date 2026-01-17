@@ -163,11 +163,6 @@ class IsmctsPlayer(Player):
     # If >0, select_move will finish after exceeding this many seconds.
     _move_time_limit_seconds: int
 
-    # TODOs:
-    # 1. Done: Do a perf run to eliminate bottlenecks
-    # 3. Play against a better player - PlanningPlayer?
-    # 3. check the code again
-
     def __init__(
             self,
             num_players: int,
@@ -218,41 +213,6 @@ class IsmctsPlayer(Player):
                 sum([len(root.children[m]) for m in root.children]),
                 root.N[move], len(root.children[move]) if move in root.children else 0))
         return move
-
-    def _hand_value(self, values: list[int]):
-        # Compute a heuristic value of this hand, the better, the higher.
-        # This is pretty heuristic. I don't count for overlaps (eg a triple counts
-        # as both triple and double). But I lack a clear intuition for what
-        # would be a better metric, and feel that learning a value function
-        # is the only way to really improve on the below. E.g. I tried to use
-        # pow(i, const)*c and do a grid search over const but that did not
-        # seem to make a difference, and feels like manual ML.
-        # TODO: Same as in GreedyPlayerWithFlip, deduplicate.
-        (group_counts, run_counts) = self._count_groups_and_runs(values)
-        value = 0
-        for i, c in enumerate(run_counts):
-            # ignore the singles
-            if i == 0 or c == 0:
-                continue
-            value += i * c
-        for i, c in enumerate(group_counts):
-            if i == 0 or c == 0:
-                continue
-            # groups count more than runs of the same size, but not as much as
-            # a longer run.
-            value += (i + 0.5) * c
-        return value
-
-    def _count_groups_and_runs(self, values: Sequence[int]):
-        group_counts = [0] * len(values)
-        run_counts = [0] * len(values)
-        for start_pos in range(len(values)):  # 0, 1, N-1
-            for meld_size in range(1, len(values) + 1 - start_pos):
-                if Util.is_group(values[start_pos:start_pos + meld_size]):
-                    group_counts[meld_size - 1] += 1
-                if Util.is_run(values[start_pos:start_pos + meld_size]):
-                    run_counts[meld_size - 1] += 1
-        return group_counts, run_counts
 
     def stats(self) -> IsmctsStats:
         assert self._record_stats

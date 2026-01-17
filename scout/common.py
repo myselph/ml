@@ -368,3 +368,16 @@ class Player(ABC):
     @abstractmethod
     def select_move(self, info_state: InformationState) -> Move:
         pass
+
+    def _hand_value(self, values: Sequence[int]):
+        # Compute a heuristic value of this hand, the better, the higher.
+        # This is a very rough heuristic, but useful to eg decide whether or
+        # not to flip a hand, or to improve on random move selection.
+        groups = Util._find_groups(list(values), 2)
+        runs = Util._find_runs(list(values), 2)
+        value = 0
+        for r in runs:
+            value += r[1]-r[0]+1
+        for g in groups:
+            value += g[1]-g[0]+1.5
+        return value
