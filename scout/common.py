@@ -377,7 +377,7 @@ class Player(ABC):
         runs = Util._find_runs(list(values), 2)
         value = 0
         for r in runs:
-            value += r[1]-r[0]+1
+            value += r[1] - r[0] + 1
         for g in groups:
-            value += g[1]-g[0]+1.5
+            value += g[1] - g[0] + 1.5
         return value

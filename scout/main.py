@@ -5,7 +5,7 @@ from abc import abstractmethod
 from typing import Callable
 from game_state import GameState
 from common import Player
-from players import PlanningPlayer, GreedyShowPlayerWithFlip, RandomPlayer
+from players import EpsilonGreedyScorePlayer, PlanningPlayer, GreedyShowPlayerWithFlip
 from ismcts_player import IsmctsPlayer
 import argparse
 import random
@@ -18,7 +18,7 @@ parser.add_argument(
     default=100
 )
 parser.add_argument(
-    '--num_rollouts', 
+    '--num_rollouts',
     type=lambda s: [int(item) for item in s.split(',')],
     default=[100],
     help="Comma-separated list of the number of MCTS rollouts to run"
@@ -36,6 +36,8 @@ if args.fix_seed:
 
 # Play a single round - that is, a single deck of cards - and return
 # the scores.
+
+
 def play_round(players: list[Player], dealer: int) -> list[int]:
     game_state = GameState(len(players), dealer)
     game_state.maybe_flip_hand([p.flip_hand for p in players])
@@ -54,6 +56,7 @@ def play_game(players: list[Player]) -> list[int]:
     scores = []
     for dealer in range(0, len(players)):
         scores.append(play_round(players, dealer))
+        print("#", end="", flush=True)
     return [sum(y) for y in zip(*scores)]
 
 
@@ -82,9 +85,12 @@ def play_tournament(
     start_time = time.time()
     num_games = args.num_games
     for reps in range(0, num_games):
+        print(f"game {reps}/{args.num_games}: ", end="", flush=True)
         scores = play_game(players)
         winner_index = max(range(len(scores)), key=lambda i: scores[i])
         wins[winner_index] += 1
+        print("")
+
     end_time = time.time()
 
     a_win_rate = wins[0] / (wins[0] + sum(wins[1:]) / 4)
@@ -101,8 +107,11 @@ def play_tournament(
 
 def main():
     for i in args.num_rollouts:
-        awr = play_tournament(lambda: IsmctsPlayer(5, i),
-                        lambda: PlanningPlayer())
+        awr = play_tournament(
+            lambda: IsmctsPlayer(
+                5, i,
+                lambda: EpsilonGreedyScorePlayer(epsilon=1)),
+            lambda: GreedyShowPlayerWithFlip())
         print(f"{i}: {awr}")
 
 

@@ -53,18 +53,39 @@ class GreedyShowPlayerWithFlip(GreedyShowPlayer):
         down_value = self._hand_value([h[1] for h in hand])
         return up_value < down_value
 
-    def _hand_value(self, values: Sequence[int]):
-        # Compute a heuristic value of this hand, the better, the higher.
-        # This is *super* heuristic; I don't even count for overlaps (eg a
-        # triple counts as both triple and double and single).
-        groups = Util._find_groups(list(values), 2)
-        runs = Util._find_runs(list(values), 2)
-        value = 0
-        for r in runs:
-            value += r[1] - r[0] + 1
-        for g in groups:
-            value += g[1] - g[0] + 1.5
-        return value
+class EpsilonGreedyScorePlayer(Player):
+    # A player that picks, with P(1-epsilon), the action that most improves its
+    # score, and a random move with P(epsilon)
+    _epsilon: float
+    def __init__(self, epsilon=0.1):
+        self._epsilon = epsilon
+
+    def flip_hand(self, hand: Sequence[Card]) -> bool:
+        up_value = self._hand_value([h[0] for h in hand])
+        down_value = self._hand_value([h[1] for h in hand])
+        return up_value < down_value
+
+    def select_move(self, info_state: InformationState) -> Move:
+        moves = info_state.possible_moves()
+        if random.random() < self._epsilon:
+            return random.choice(moves)
+        
+        scores = self._scores(info_state, moves)
+        max_index = max(range(0, len(scores)), key = lambda i: scores[i])
+        return moves[max_index]
+
+    def _scores(self, info_state: InformationState, moves: tuple[Move, ...]) -> list[float]:
+        scores = []
+        for move in moves:
+            if isinstance(move, Scout):
+                scores.append(-1)
+            elif isinstance(move, Show):
+                scores.append(len(info_state.table) + move.length)
+            elif isinstance(move, ScoutAndShow):
+                scores.append(len(info_state.table) + move.show.length - 1)
+        return scores
+
+
 
 
 class PlanningPlayer(GreedyShowPlayerWithFlip):

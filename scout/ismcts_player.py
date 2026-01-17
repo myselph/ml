@@ -16,7 +16,7 @@ class Node:
     possible_moves: tuple[Move, ...]
     untried_moves: list[Move]  # subset of possible_moves
     N: dict[Move, int]  # action -> visit count
-    W: dict[Move, int]  # action -> sum of points
+    W: dict[Move, float]  # action -> sum of points
     # action -> information_state hash -> Node
     children: dict[Move, dict[int, Self]]
 
@@ -32,7 +32,9 @@ def sample_move_uct(node: Node) -> Move:
         node.N[m] + sqrt(2 * log(num_visits) / node.N[m]))
 
 
-def backprop(path: list[tuple[Node, Move]], score: int):
+def backprop(path: list[tuple[Node, Move]],
+             game_state: GameState, my_index: int):
+    score = game_state.scores[my_index]
     for (node, move) in path:
         node.N[move] += 1
         node.W[move] += score
@@ -48,12 +50,12 @@ def ismcts(node: Node, game_state: GameState, players: list[Player],
         path.append((node, move))
         game_state.move(move)
         if game_state.is_finished():
-            backprop(path, game_state.scores[my_index])
+            backprop(path, game_state, my_index)
             return
         for p in players[my_index + 1:] + players[:my_index]:
             game_state.move(p.select_move(game_state.info_state()))
             if game_state.is_finished():
-                backprop(path, game_state.scores[my_index])
+                backprop(path, game_state, my_index)
                 return
         info_state = game_state.info_state()
         hash = info_state.__hash__()
@@ -76,7 +78,7 @@ def ismcts(node: Node, game_state: GameState, players: list[Player],
 
     # Is this even possible?
     if game_state.is_finished():
-        backprop(path, game_state.scores[my_index])
+        backprop(path, game_state, my_index)
         return
     # 2. Expansion phase: There are untried moves. Pick one, add a node, then
     # continue rolling out.
@@ -87,12 +89,12 @@ def ismcts(node: Node, game_state: GameState, players: list[Player],
     node.untried_moves.remove(move)
     game_state.move(move)
     if game_state.is_finished():
-        backprop(path, game_state.scores[my_index])
+        backprop(path, game_state, my_index)
         return
     for p in players[my_index + 1:] + players[:my_index]:
         game_state.move(p.select_move(game_state.info_state()))
         if game_state.is_finished():
-            backprop(path, game_state.scores[my_index])
+            backprop(path, game_state, my_index)
             return
     info_state = game_state.info_state()
     hash = info_state.__hash__()
@@ -113,7 +115,7 @@ def ismcts(node: Node, game_state: GameState, players: list[Player],
     path.append((node, move))
     game_state.move(move)
     if game_state.is_finished():
-        backprop(path, game_state.scores[my_index])
+        backprop(path, game_state, my_index)
         return
     # Play the game till the end and return the player's score.
     p = (my_index + 1) % len(players)
@@ -122,7 +124,7 @@ def ismcts(node: Node, game_state: GameState, players: list[Player],
         p = (p + 1) % len(players)
 
     # 4. Backprop phase - Increment N and possible W for all nodes visited.
-    backprop(path, game_state.scores[my_index])
+    backprop(path, game_state, my_index)
 
 
 @dataclass
@@ -191,7 +193,7 @@ class IsmctsPlayer(Player):
         if hash in self._cached_trees:
             root = self._cached_trees[hash]
         else:
-            root = Node(possible_moves[:], list(possible_moves), {}, {}, {})
+            root = Node(possible_moves, list(possible_moves), {}, {}, {})
 
         for _ in range(self._num_simulations):
             game_state = GameState.sample_from_info_state(info_state)
