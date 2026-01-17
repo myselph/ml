@@ -110,7 +110,7 @@ def main():
         awr = play_tournament(
             lambda: IsmctsPlayer(
                 5, i,
-                lambda: EpsilonGreedyScorePlayer(epsilon=1)),
+                lambda: EpsilonGreedyScorePlayer(epsilon=0.2)),
             lambda: GreedyShowPlayerWithFlip())
         print(f"{i}: {awr}")
 

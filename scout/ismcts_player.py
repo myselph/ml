@@ -34,7 +34,10 @@ def sample_move_uct(node: Node) -> Move:
 
 def backprop(path: list[tuple[Node, Move]],
              game_state: GameState, my_index: int):
-    score = game_state.scores[my_index]
+    my_score = game_state.scores[my_index]
+    avg_opp_score = (sum(game_state.scores) - my_score) / \
+        (len(game_state.scores) - 1)
+    score = my_score - avg_opp_score
     for (node, move) in path:
         node.N[move] += 1
         node.W[move] += score
