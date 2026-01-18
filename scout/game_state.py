@@ -104,7 +104,7 @@ class GameState:
     initial_flip_executed: bool  # Whether the initial flip has been executed.
     finished: bool  # Whether the game is over.
 
-    def __init__(self, num_players: int, dealer: int):
+    def __init__(self, num_players: int, dealer: int, max_moves: int = 1000):
         self.num_players = num_players
         self.hands = _generate_hands(num_players)
         self.scores = [-len(h) for h in self.hands]
@@ -116,6 +116,7 @@ class GameState:
         self.history = []
         self.initial_flip_executed = False
         self.finished = False
+        self.moves_left = max_moves
 
     def move(self, m: Move):
         assert self.initial_flip_executed
@@ -142,6 +143,14 @@ class GameState:
             self.finished = True
         self.history.append(recorded_move)
         self.current_player = (self.current_player + 1) % self.num_players
+        # I added the max moves counter; there is no such thing in official
+        # Scout, but it helps avoid enless loops in which deterministic players
+        # can get stuck in. It would be preferable to have that check outside
+        # since this is not an official rule, but I doubt it will ever cause
+        # problems (famous last words).
+        self.moves_left -= 1
+        if self.moves_left == 0:
+            self.finished = True
 
     def is_finished(self):
         return self.finished
