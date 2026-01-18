@@ -381,3 +381,23 @@ class Player(ABC):
         for g in groups:
             value += g[1] - g[0] + 1.5
         return value
+
+
+type Score = float
+
+@dataclass
+class StateAndScoreRecord:
+    # A class representing the input data for a neural net value function.
+    # When used in training, this must contain a valid rollout_score - the 
+    # training target - otherwise that field is ignored.
+    # This is collected right after expanding a node (trying a new action +
+    # adding a child + rolling out the game till done), representing a subset of
+    # the child's info_state and the resulting score.
+    my_player: int  # index of the player this record represents
+    hand: tuple[int, ...]
+    table: tuple[Card, ...]
+    num_cards: tuple[int, ...]  # How many cards each player holds.
+    scores: tuple[int, ...]  # The current scores for each player.
+    can_scout_and_show: tuple[bool, ...]
+    # The result of the roll-out simulation for this player.
+    rollout_score: Score

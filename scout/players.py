@@ -1,6 +1,6 @@
 # A Scout (card game) simulator.
 import random
-from common import Player, InformationState, Scout, Show, ScoutAndShow, Move, Util, Card
+from common import Player, InformationState, Scout, Show, ScoutAndShow, Move, Util, Card, Score
 from collections.abc import Sequence
 
 
@@ -71,10 +71,10 @@ class EpsilonGreedyScorePlayer(Player):
             return random.choice(moves)
         
         scores = self._scores(info_state, moves)
-        max_index = max(range(0, len(scores)), key = lambda i: scores[i])
+        max_index = max(range(len(scores)), key = lambda i: scores[i])
         return moves[max_index]
 
-    def _scores(self, info_state: InformationState, moves: tuple[Move, ...]) -> list[float]:
+    def _scores(self, info_state: InformationState, moves: tuple[Move, ...]) -> list[Score]:
         scores = []
         for move in moves:
             if isinstance(move, Scout):

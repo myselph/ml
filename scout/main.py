@@ -29,6 +29,17 @@ parser.add_argument(
     default=False,
     help="Fix the RNG seed - useful for comparing performance measurements"
 )
+parser.add_argument(
+    "--expansion_file_prefix",
+    type=str,
+    help="If provided, record expansions and store using this prefix.",
+    default=""
+)
+parser.add_argument(
+    '--use_value_fn',
+    action='store_true',
+    help="Whether to use a value_fn in ISMCTS"
+)
 args = parser.parse_args()
 
 if args.fix_seed:
@@ -110,8 +121,9 @@ def main():
         awr = play_tournament(
             lambda: IsmctsPlayer(
                 5, i,
-                lambda: EpsilonGreedyScorePlayer(epsilon=0.2)),
-            lambda: GreedyShowPlayerWithFlip())
+                lambda: EpsilonGreedyScorePlayer(epsilon=0.5),
+                0, args.expansion_file_prefix, args.use_value_fn),
+            lambda: PlanningPlayer())
         print(f"{i}: {awr}")
 
 
