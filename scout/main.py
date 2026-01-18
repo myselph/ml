@@ -5,7 +5,7 @@ from abc import abstractmethod
 from typing import Callable
 from game_state import GameState
 from common import Player
-from players import EpsilonGreedyScorePlayer, PlanningPlayer, GreedyShowPlayerWithFlip
+from players import CompositePlayer, EpsilonGreedyScorePlayer, PlanningPlayer, GreedyShowPlayerWithFlip, RandomPlayer
 from ismcts_player import IsmctsPlayer
 import argparse
 import random
@@ -121,7 +121,8 @@ def main():
         awr = play_tournament(
             lambda: IsmctsPlayer(
                 5, i,
-                lambda: EpsilonGreedyScorePlayer(epsilon=0.5),
+                lambda: CompositePlayer([EpsilonGreedyScorePlayer(epsilon=0.5),
+                                         PlanningPlayer()], weights = [0.4, 0.6]),
                 0, args.expansion_file_prefix, args.use_value_fn),
             lambda: PlanningPlayer())
         print(f"{i}: {awr}")

@@ -330,7 +330,7 @@ class IsmctsPlayer(Player):
         else:
             self._cached_trees = {}
 
-        if self._expansion_file_prefix and len(self._expansions) >= 100_000:
+        if self._expansion_file_prefix and len(self._expansions) >= 10_000:
             save_records(
                 self._expansions, f"{self._expansion_file_prefix}_{
                     self._num_expansion_files}.pkl")

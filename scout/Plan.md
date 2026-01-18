@@ -123,14 +123,22 @@ ISMCTS experiments:
       and get good. I am still pursuing that avenue - I plan to make the
       neural net function more powerful, and I then want to move on to neural
       policy functions.
+    * I traced ISMCTS with stronger simulated players - 40% EpsilonGreedy, 60%
+      PlanningPlayer - playing against PlanningPlayer's. The neural net trained
+      on that exhibits lower loss (MSE=20, down from 29) so things become more
+      predictable / lower variance. Results when using that value_fn are mixed/
+      high variance - 0% for 200, 53% for 400.
+    * An idea for how to speed up ISMCTS w/ neural value fns is to try all
+      untried actions on a "virgin" node at once. In classic ISMCTS, we pick
+      actions on unexpanded nodes (such as the first one) until there are no
+      untried actions left, but each one of those looks the same, and we don't
+      use UCT until a node is fully expanded. It will lead to different outcomes
+      though - today, we can end up with many partially expanded nodes.
+   1. Using stronger opponents during ISMCTS roll-outs:
+     1. W/o value_fn:
+     1. for value_fn training: MSE loss strongly reduced (now 20), meaning the
+        scores are much better predictable.
    1. Next steps:
-     1. Train on 2000 roll-outs, to check the bias hypothesis.
-     1. Add two new features - number of players (always 5 so shouldn't make
-       a difference) and current score diff over opponent players (may be more
-       useful than an array of absolute scores).
-     1. Did the above two - MSE does not get better so I suspect the features
-        don't help. Still running the experiments.
-     1. Submit the code.
      1. Use stronger opponents during the ISMCTS roll-outs, but retain some
        randomness, e.g. by extending PlanningPlayer with epsilon-greedy
        selection, and/or combos strong and weak players (both with randomness).
@@ -138,6 +146,49 @@ ISMCTS experiments:
         because clean labels / non-garbage data needs to come before more
         advanced neural nets.
      1. Move on to neural policies and self-play.
+1. Blog post. Contents?
+  1. Rough journey
+    1. instead of starting right away with neural policies,
+    co-designed w/ AI -> suggested reasonable path. heuristics, ISMCTS, w/
+    neural value functions, full blown neural policies w/ self play.
+    1. Then build basic infra - the interfaces Players need
+    to implement, a simple random player, and a simulator. More work than I
+    expected - in particular, finding all valid moves in an efficient manner
+    wasn't exactly trivial and took a bit of iterating.
+    1. Starting to rank players - 3 heuristic players. Very easy to implement,
+    but as it turns out, strongest not easy to beat.
+    1. ISMCTS. Type safety becoming crucial to get anything done, hashing 
+    InformationStates. Sampling possible game states. Performance becoming a
+    problem -> hot spot analysis, optimizations. Heavily relying on talking w/
+    LLM about edge cases; in hindsight I feel I should have just read the paper
+    to get a deeper understanding and feel more confident about my 
+    implementation because occasional LLM slips. Hard to tell when to go that
+    deep and when to just rely on AI. Slow but better than many players;
+    redefining score to be relative was crucial. Hidden state makes this a
+    rather different setting - for each node there's pretty much an infinite
+    number of child nodes, because a) there are 5 players, each with O(10)
+    moves, especially early on when card counts are high - that's 100k child
+    nodes, and we have a rollout of 200! b) the variance (difference in scores
+    when picking an action and playing out results) is very high - even towards
+    the end of the game. So I'm not sure how useful UCT is as a strategy as
+    compared to either just random sampling (then playouts with strong policies)
+    or a heuristic and randomized policy chosing strong moves.
+    1. Use of neural value functions - trace, train, skip rollouts. Worked
+    better for low number of roll-outs by reducing variance, and offers 
+    speedups by skipping rollouts and allowing for batching, but still hard to
+    compete against best heuristic player. At this point, impressed how far the
+    classic methods go; it took me minutes to write the heuristic policy, and
+    I could easily make it better by incorporating more of my own player
+    behaviors. Even just replicating this with tree search, and neural value
+    functions, is a significant endeavour in terms of engineering and
+    computational requirements. Depending on what the goal is - build the best
+    possible player for a competitive environment? build a player good enough
+    for entertainment purposes (hobby players, runs on phones) - a heuristic
+    player may be far preferable. I was somehow hoping or expecting that thanks
+    to self-play and neural net advances, I would very quickly surpass hand-
+    written functions or players.
+
+     
 
 
 

@@ -1,5 +1,6 @@
 # A Scout (card game) simulator.
 import random
+from typing import Self
 from common import Player, InformationState, Scout, Show, ScoutAndShow, Move, Util, Card, Score
 from collections.abc import Sequence
 
@@ -136,3 +137,34 @@ class PlanningPlayer(GreedyShowPlayerWithFlip):
     def _simulate_show(self, hand_values: list[int], show: Show):
         return hand_values[:show.startPos] + \
             hand_values[show.startPos + show.length:]
+
+
+class CompositePlayer(Player):
+    _cum_weights: list[float]
+    _players: list[Player]
+
+    def __init__(self, players: list[Player], weights: list[float]):
+        assert len(weights) == len(players)
+        assert sum(weights) <= 1.0
+        self._players = players
+        self._cum_weights = [weights[0]]
+        for w in weights[1:-1]:
+            self._cum_weights.append(w + self._cum_weights[-1])
+      
+    def select_move(self, info_state: InformationState) -> Move:
+        p = random.random()
+        for i, w in enumerate(self._cum_weights):
+            if p < w:
+                return self._players[i].select_move(info_state)
+                
+        return self._players[-1].select_move(info_state)
+    
+
+    def flip_hand(self, hand: Sequence[Card]) -> bool:
+        p = random.random()
+        for i, w in enumerate(self._cum_weights):
+            if p < w:
+                return self._players[i].flip_hand(hand)
+                
+        return self._players[-1].flip_hand(hand)
+        
