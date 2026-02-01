@@ -105,7 +105,7 @@ class PlanningPlayer(GreedyShowPlayerWithFlip):
 
     def _value(self, info_state: InformationState, move: Move) -> float:
         # Calculates a heuristic value for the state of the game after the given
-        # move. This involved simulating every move and calculating the new
+        # move. This involves simulating every move and calculating the new
         # value.
         hand_values = [h[0] for h in info_state.hand]
         if isinstance(move, Scout):

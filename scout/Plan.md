@@ -4,10 +4,93 @@ Rough plan for implementing an AI that plays Scout.
    with random policies.
 2. Done - Try some heuristics, and infra for comparing different policies.    
 3. Done: ISMCTS experiments
-4. WIP: ISMCTS + value function
-4. Neural policies value functions?
+4. Done: ISMCTS + value function
+4. Neural policies value functions
 
-ISMCTS experiments:
+# Neural self-play
+## Policy net architecture
+* The easiest architecture would be one that takes state and outputs a move, but
+I have concerns around the net outputting illegal moves - it would need something
+like 2-3 heads (for Scout, for Show, for Scout&Show), and if an illegal move is
+generated, it's unclear what else to do (keep trying?). Sure, a good enough net
+should not even generate illegal moves, and we could use RL to enforce that, but
+that seems unnecessarily hard.
+* The next idea I had was to instead have a net that ranks a set of supplied
+legal moves and outputs logprobs for each one. What I don't like about this
+solution is that the net needs to learn a world model (ie how a move would
+affect its hand and the table and scores), which feels entirely unnecessary
+since that is a deterministic and cheap operation.
+* The third idea was to take the legal moves and calculate the state after making
+that move, and let the network rank these states. This would allow the network
+to focus on the things we can't easily compute/predict. This is very similar to
+what PlanningPlayer does - only that the "value function" is learnt and more
+complex. It's also not dissimilar to the value functions I have learnt; but it's
+computed *after* a move, and unlike action-value functions it does not predict
+a value, just rank actions.
+
+How to go about the third idea?
+- As a first stage, just to check if things are working at all, just reuse the
+existing value function network, slighlty changed to predict a logprob.
+- Then encode hand w/ bidi Transformer, possibly pre-annotated, such as
+[4,4,9,2,3,4,7] -> "<group2>,4,4,<single>,9,<run3>,2,3,4,<single>,7", similar
+for table (need <empty> symbol)
+
+Evaluating only the post-move state should be
+enough, but maybe the pre-move data is still useful?
+Definitely:
+- hand [int array]
+  - encode w/ Transformer? Long training
+    - may speed up by not providing raw values, but groups, runs. E.g. say 
+      [4,4,9,2,3,4,7] -> "<run>,2,3,<group>4,2,<single>,9,<single>,7; could also
+      give subgroups. Problem, no way to predict if you're close to building a
+      better run. Could do in order - "<group>4,2,<single>,9,<run>2,3,<single>7
+      Or maybe just give annotated raw values, such as "<group>,4,4,<single>,9,<run>,2,3,4,<single>,7"
+      Or even special tokens like "<group2>" and "<run3>"
+  - histogram of groups, runs
+- table [int array] -> 
+
+## Questions
+* Imitiation learning early on? Play episodes as above, but a) pick actions from
+PlanningPlayer; b) for loss function, ignore rewards and do a classification loss
+imitating the PlanningPlayer action. Wait till convergence then see if how badly
+we perform against a PlanningPlayer (I expect we don't win against it).
+
+# On ISMCTS
+After a long run, and thinking through ISMCTS as applied to Scout, I came away
+with the conclusion that it is not the appropriate tool for the job.
+Take a game of Scout with five players, 45 cards distributed across players and
+the table; and imagine a playout tree where each node corresponds to an
+opportunity for the player to take an action, and edges between nodes represent
+five actions (one by each player).
+Consider the branch factor of the search tree:
+
+1. There are on the order of O(10) possible moves every time an action is selected,
+and for five players, that means we'd have on the order if 100k child nodes -
+ballpark estimate, there are frequently more moves than just 10.
+1. At each node, the player has incomplete information, and the number of
+possible game states is huge (even after accounting for removed cards, and
+know assignments of cards to players) - way beyond 1M. We'd have O(100k)
+child nodes for each one of these states.
+1. If we were to explore less and bias more towards picking strong actions, that
+might reduce the branching factor by maybe 10x only.
+
+What that means in practice is that if we perform N rollouts where N = O(1000),
+we mostly visit child nodes once even at the first level of the tree, never
+mind subsequent levels. That refutes the whole point of building a tree, which
+is to aggregate (and possibly cache) information, and simply doing N independent
+roll-outs from the root node (instead of all the ISMCTS overhead - UCT, the
+different phases, expansion, buildign a tree) would give the same result.
+The above back-of-an-envelope calculations mostly match actual runs - there is
+little reuse of previously created nodes, and a "Flat Monte Carlo" approach
+would suffice.
+
+I realize that the ISMCTS investment was probably a waste of time, and I may end
+up with what I wanted to do from day 1 - train policy networks with
+self play.
+
+
+# Appendix
+## ISMCTS experiments
 1. My original ISMCTS version used absolute scores and was fairly slow.
    It barely won 1% against PlanningPlayer even with 20k roll-outs, so I used
    GreedyShowPlayerWithFlip in the experiments here and below.
@@ -142,12 +225,19 @@ ISMCTS experiments:
      1. Use stronger opponents during the ISMCTS roll-outs, but retain some
        randomness, e.g. by extending PlanningPlayer with epsilon-greedy
        selection, and/or combos strong and weak players (both with randomness).
+       
      1. Use Transformer encoders for the table and hand, but only after above,
         because clean labels / non-garbage data needs to come before more
         advanced neural nets.
      1. Move on to neural policies and self-play.
 1. Blog post. Contents?
   1. Rough journey
+    1. How game works; what makes it interesting: no obvious strategy, yet one
+    person consistently won. The randomness is high - lots of surprises, big
+    changes in the end phase - so I wondered what a winning strategy looks like.
+    Could let computers get good at it, than try and understand what they do.
+    (not *why* they do it - just see if patterns emerge such as curricula, or
+    greedy behavior, etc.).
     1. instead of starting right away with neural policies,
     co-designed w/ AI -> suggested reasonable path. heuristics, ISMCTS, w/
     neural value functions, full blown neural policies w/ self play.
@@ -164,7 +254,13 @@ ISMCTS experiments:
     to get a deeper understanding and feel more confident about my 
     implementation because occasional LLM slips. Hard to tell when to go that
     deep and when to just rely on AI. Slow but better than many players;
-    redefining score to be relative was crucial. Hidden state makes this a
+    redefining score to be relative was crucial.
+    1. Hidden state / partial observable state seems to be core difficulty: it
+    makes it very challenging or impossible to compute values of states because
+    the variance is so high. Another difficulty is the number of players -
+    between your current state, and the next time you get to make a move, there
+    are N-1 other player actions based on hidden state, leading to extremely
+    high branching factors.
     rather different setting - for each node there's pretty much an infinite
     number of child nodes, because a) there are 5 players, each with O(10)
     moves, especially early on when card counts are high - that's 100k child
@@ -187,12 +283,3 @@ ISMCTS experiments:
     player may be far preferable. I was somehow hoping or expecting that thanks
     to self-play and neural net advances, I would very quickly surpass hand-
     written functions or players.
-
-     
-
-
-
-
-
-
-

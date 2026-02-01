@@ -107,12 +107,7 @@ def play_tournament(
     a_win_rate = wins[0] / (wins[0] + sum(wins[1:]) / 4)
     wins = list(map(lambda i: i / sum(wins), wins))
     print(
-        f"wins %: {wins}, a_win_rate normalized: {
-            a_win_rate:.3f}, dt/game: {
-            (
-                end_time -
-                start_time) /
-            num_games}")
+        f"wins %: {wins}, a_win_rate normalized: {a_win_rate:.3f}, dt/game: {(end_time - start_time) / num_games}")
     return a_win_rate
 
 

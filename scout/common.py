@@ -1,4 +1,5 @@
 # Self-contained module for shared types and functionality.
+from __future__ import annotations
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -354,6 +355,112 @@ class InformationState:
                     scout_and_shows.append(ScoutAndShow(scout, show))
 
         return tuple(scouts + shows + scout_and_shows)
+    
+    def post_move_states(self) -> tuple[tuple[Move,...],tuple[InformationState,...]]:
+        # TODO: I dislike how much this overlaps with game_state.move().
+        # TODO: The returned InformationStates have current_player set to the
+        # player that made the move, not the next player; that's a bit
+        # counter-intuitive, but the object is only ever used in the context
+        # of a single player - incrementing current_player doesn't really make
+        # sense because the hand is that of the current player.
+        # Return the information states that would result from making each
+        # possible move from this state.
+        post_states: list[InformationState] = []
+        moves = self.possible_moves()
+        for m in moves:
+            if isinstance(m, Scout):
+                if m.first:
+                    card = self.table[0]
+                    new_table = self.table[1:]
+                else:
+                    card = self.table[-1]
+                    new_table = self.table[:-1]
+                if m.flip:
+                    card = (card[1], card[0])
+                new_hand = list(self.hand)
+                new_hand.insert(m.insertPos, card)
+                new_scores = list(self.scores)
+                new_scores[self.scout_benefactor] += 1
+                new_scores[self.current_player] -= 1
+                new_num_cards = list(self.num_cards)
+                new_num_cards[self.current_player] += 1
+                new_history = list(self.history) + [RecordedScout(m, card)]
+
+                post_states.append(InformationState(
+                    num_players=self.num_players,
+                    dealer=self.dealer,
+                    current_player=self.current_player,
+                    scout_benefactor=self.scout_benefactor,
+                    hand=tuple(new_hand),
+                    table=new_table,
+                    num_cards=tuple(new_num_cards),
+                    scores=tuple(new_scores),
+                    can_scout_and_show=self.can_scout_and_show,
+                    history=tuple(new_history)))
+                
+            elif isinstance(m, Show):
+                shown_cards = tuple(self.hand[m.startPos:m.startPos + m.length])
+                old_table_len = len(self.table)
+                new_hand = self.hand[:m.startPos] + self.hand[m.startPos + m.length:]
+                new_scores = list(self.scores)
+                new_scores[self.current_player] += m.length + old_table_len
+                new_num_cards = list(self.num_cards)
+                new_num_cards[self.current_player] -= m.length
+                new_history = list(self.history) + [
+                    RecordedShow(m, shown_cards, tuple(self.table))]
+                
+
+                post_states.append(InformationState(
+                    num_players=self.num_players,
+                    dealer=self.dealer,
+                    current_player=self.current_player,
+                    scout_benefactor=self.current_player,
+                    hand=new_hand,
+                    table=shown_cards,
+                    num_cards=tuple(new_num_cards),
+                    scores=tuple(new_scores),
+                    can_scout_and_show=self.can_scout_and_show,
+                    history=tuple(new_history)))
+            else:
+                old_table_len = len(self.table)
+                if m.scout.first:
+                    card = self.table[0]
+                else:
+                    card = self.table[-1]
+                if m.scout.flip:
+                    card = (card[1], card[0])
+                new_hand = list(self.hand)
+                new_hand.insert(m.scout.insertPos, card)
+                shown_cards = tuple(
+                    new_hand[m.show.startPos:m.show.startPos + m.show.length])
+                # Remove the shown cards from the hand.
+                new_hand = new_hand[:m.show.startPos] + \
+                    new_hand[m.show.startPos + m.show.length:]
+                new_table = shown_cards
+                new_scores = list(self.scores)
+                new_scores[self.scout_benefactor] += 1
+                new_scores[self.current_player] += m.show.length - 1 + old_table_len
+                new_num_cards = list(self.num_cards)
+                new_num_cards[self.current_player] += 1 - m.show.length
+                new_can_scout_and_show = list(self.can_scout_and_show)
+                new_can_scout_and_show[self.current_player] = False
+                new_history = list(self.history) + [
+                    RecordedScoutAndShow(
+                        RecordedScout(m.scout, card),
+                        RecordedShow(m.show, shown_cards, tuple(self.table)))]
+                post_states.append(InformationState(
+                    num_players=self.num_players,
+                    dealer=self.dealer,
+                    current_player=self.current_player,
+                    scout_benefactor=self.current_player,
+                    hand=tuple(new_hand),
+                    table=new_table,
+                    num_cards=tuple(new_num_cards),
+                    scores=tuple(new_scores),
+                    can_scout_and_show=tuple(new_can_scout_and_show),
+                    history=tuple(new_history)))
+        return moves, tuple(post_states)
+
 
 
 class Player(ABC):
