@@ -40,10 +40,7 @@ parser.add_argument(
     action='store_true',
     help="Whether to use a value_fn in ISMCTS"
 )
-args = parser.parse_args()
 
-if args.fix_seed:
-    random.seed(10)
 
 # Play a single round - that is, a single deck of cards - and return
 # the scores.
@@ -78,7 +75,8 @@ def play_tournament(
     player_a_factory_fn: Callable[[],
                                   Player],
     player_b_factory_fn: Callable[[],
-                                  Player]) -> float:
+                                  Player],
+    num_games: int = 100) -> float:
     # For now: let one player A compete against 4 player B's. There's a lot of
     # other types of setups we could use, such as 2A vs 3B, with different
     # player sequences; other numbers of players (3, 4); or average between
@@ -94,9 +92,9 @@ def play_tournament(
     wins = [0] * len(players)
 
     start_time = time.time()
-    num_games = args.num_games
+    
     for reps in range(0, num_games):
-        print(f"game {reps}/{args.num_games}: ", end="", flush=True)
+        print(f"game {reps}/{num_games}: ", end="", flush=True)
         scores = play_game(players)
         winner_index = max(range(len(scores)), key=lambda i: scores[i])
         wins[winner_index] += 1
@@ -112,6 +110,9 @@ def play_tournament(
 
 
 def main():
+    args = parser.parse_args()
+    if args.fix_seed:
+        random.seed(10)
     for i in args.num_rollouts:
         awr = play_tournament(
             lambda: IsmctsPlayer(
@@ -119,7 +120,8 @@ def main():
                 lambda: CompositePlayer([EpsilonGreedyScorePlayer(epsilon=0.5),
                                          PlanningPlayer()], weights = [0.4, 0.6]),
                 0, args.expansion_file_prefix, args.use_value_fn),
-            lambda: PlanningPlayer())
+            lambda: PlanningPlayer(),
+            num_games = args.num_games)
         print(f"{i}: {awr}")
 
 

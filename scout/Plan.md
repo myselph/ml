@@ -5,7 +5,7 @@ Rough plan for implementing an AI that plays Scout.
 2. Done - Try some heuristics, and infra for comparing different policies.    
 3. Done: ISMCTS experiments
 4. Done: ISMCTS + value function
-4. Neural policies value functions
+4. WIP: Neural policies value functions
 
 # Neural self-play
 ## Policy net architecture
@@ -28,32 +28,83 @@ complex. It's also not dissimilar to the value functions I have learnt; but it's
 computed *after* a move, and unlike action-value functions it does not predict
 a value, just rank actions.
 
-How to go about the third idea?
-- As a first stage, just to check if things are working at all, just reuse the
-existing value function network, slighlty changed to predict a logprob.
-- Then encode hand w/ bidi Transformer, possibly pre-annotated, such as
-[4,4,9,2,3,4,7] -> "<group2>,4,4,<single>,9,<run3>,2,3,4,<single>,7", similar
-for table (need <empty> symbol)
+## Features
+Lots of possibilities. I'll start with a simple feedforward net like in 
+neural_value_function.py which should be able to beat PlanningPlayer - this will
+allow me to get the infrastructure working and making sure stuff works, before
+diving into more advanced nets like Transformers, and taking things like history
+into account.
 
-Evaluating only the post-move state should be
-enough, but maybe the pre-move data is still useful?
-Definitely:
-- hand [int array]
-  - encode w/ Transformer? Long training
-    - may speed up by not providing raw values, but groups, runs. E.g. say 
-      [4,4,9,2,3,4,7] -> "<run>,2,3,<group>4,2,<single>,9,<single>,7; could also
-      give subgroups. Problem, no way to predict if you're close to building a
-      better run. Could do in order - "<group>4,2,<single>,9,<run>2,3,<single>7
-      Or maybe just give annotated raw values, such as "<group>,4,4,<single>,9,<run>,2,3,4,<single>,7"
-      Or even special tokens like "<group2>" and "<run3>"
-  - histogram of groups, runs
-- table [int array] -> 
+## Strategy / TODO
+1. Try to get as good as PlanningPlayer with a vwery simple setup - just train
+5 policies.
+    1. Done: Figure out the right hyperparams - learning rate, iterations, epochs,
+       episodes, minibatch size. Done. See write-up below.
+    1. Given large minibatch size (512 or 256), but limited dataset size per
+       epoch (on the order of the size of a minibatch - sometimes more sometimes
+       less), incomplete batches are common, giving much more weight to the
+       examples in the incomplete batch (in the current impl of the loss fn).
+       Change loss fn to not use mean, but sum()/constant. This is similar to
+       padding with 0s but more efficient, and more natural in our code.
+    1. Games get shorter as players get better, leading to less data generated
+       per episode. Adjust the number of episodes being played until we have
+       collected at least N examples per player (and pick N to be batch_size or
+       2 * batch_size. Yay, yet another hyperparameter)
+1. Track performance somehow. I find it hard to pick the right learning rate and
+   other hyperparams because I don't really see whether agents get better or not
+   - the losses are kinda meaningless, and I kinda rely on seeing how long games
+   take to judge progress (better players have shorter games it seems).
+   1. Evalute agents in every iteration, to get some notion of progress, just not
+   every iteration - and see how big variance is (eg if we play against PlanningPlaer, do we need 200 games? 20?)
+   1/ I have code to evaluate agents in every iteration but that takes a lot of time.
+   Still, may be worth at least for determining hyperparams, eg LR schedule,
+   so I know when I'm converging.
+1. Experiment with a larger population of agents to add diversity, and keeping
+   the best old players around.
+1. Random thought: Roman idea of using reward=highest_player-second_highest_player
+   for highest player. But unclear what reward for other players would be, and
+   whether such asymetry would be good.
+1. Try Transformers. May benefit from initializing with imitation learning,
+   unclear.
 
-## Questions
-* Imitiation learning early on? Play episodes as above, but a) pick actions from
-PlanningPlayer; b) for loss function, ignore rewards and do a classification loss
-imitating the PlanningPlayer action. Wait till convergence then see if how badly
-we perform against a PlanningPlayer (I expect we don't win against it).
+## Hyperparameter optimization & Learnings
+* Tried different batch sizes; 128 didn't work as well, 256 & 512 better / about
+  the same.
+* With batch size fixed, tried different combos of learning rates, iterations,
+  epochs, and episodes. LRs < 1e-3 seem to be too small; LRs 1e-2 seems to be
+  too big. I stuck with 3e-3 for now but think LR schedule or 1e-3 with more
+  data/iterations is still in the cards.
+* Then for B=512, lr=1e-3, I tried to keep comp budget about constant by
+  requiring iterations * epochs * episodes = 3200 (40 * 4 * 20), and varied
+  those params, measuring how well they worked in win_rate against
+  PlanningPlayer. 10 iterations never seems to be enough, so I omitted that
+  from the table below. Got the follow results - columns iterations, rows epochs:
+
+lr 1e-3:
+
+|   | 20 | 40 | 80 |
+| - | -  | -  | -  |
+| 2 | 13 | 13 | 42 |
+| 4 |  2 | 10 | 36 |
+| 8 | 19 | 49 | 30 |
+
+lr 3e-3
+|   | 20 | 40 | 80 |
+| - | -  | -  | -  |
+| 2 | 37 | 51 | 54 |
+| 4 | 32 | 49 | 52 |
+| 8 | 11 | 17 | 13 |
+
+* With roughly double the budget - lr 1e-3, 80 iterations, 2 epochs, 40 episodes,
+  I get to a win rate of ~64% (with 80 episodes, same thing), which is great -
+  I win against PlanningPlayer.
+* Training is somewhat unstable, eg I found win rates against PlanningPlayer cna
+  vary a fair bit (40%, 60%) across two runs if little data (100 examples per
+  minibatch) is used; gets more reliable with more data. Also it seems the
+  performance of players oscillates after a while (when looking at game length)
+  but I need to add that progress tracking to really know.
+
+
 
 # On ISMCTS
 After a long run, and thinking through ISMCTS as applied to Scout, I came away
@@ -97,7 +148,7 @@ self play.
    For the original scoring and all others, I found a saturating relationship
    between rollouts and win rate. This one was roughly
    0% at 40, 50% at 125, and 75%
-1. Next I sped things up 3x hrough different move generation and confirmed the
+1. Next I sped things up 3x through different move generation and confirmed the
    win rate / rollout relationship was the same. So this CL here (1/16/26, 8pm)
    is a baseline working ISMCTS version:
    For 40, 70, 100, 130, 160, 200, 250, 300, respectively:
@@ -225,7 +276,6 @@ self play.
      1. Use stronger opponents during the ISMCTS roll-outs, but retain some
        randomness, e.g. by extending PlanningPlayer with epsilon-greedy
        selection, and/or combos strong and weak players (both with randomness).
-       
      1. Use Transformer encoders for the table and hand, but only after above,
         because clean labels / non-garbage data needs to come before more
         advanced neural nets.
@@ -233,7 +283,7 @@ self play.
 1. Blog post. Contents?
   1. Rough journey
     1. How game works; what makes it interesting: no obvious strategy, yet one
-    person consistently won. The randomness is high - lots of surprises, big
+    person consistently won. The randomness is high - lots placketof surprises, big
     changes in the end phase - so I wondered what a winning strategy looks like.
     Could let computers get good at it, than try and understand what they do.
     (not *why* they do it - just see if patterns emerge such as curricula, or
@@ -283,3 +333,6 @@ self play.
     player may be far preferable. I was somehow hoping or expecting that thanks
     to self-play and neural net advances, I would very quickly surpass hand-
     written functions or players.
+    1. Realization that ISMCTS is the wrong tool (or rather offers no advantage
+    over flat Monte Carlo). Next up, neural policies. PPO. Reward hacking problems.
+    How to even rank players? How to match them?

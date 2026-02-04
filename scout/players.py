@@ -91,7 +91,7 @@ class EpsilonGreedyScorePlayer(Player):
 
 class PlanningPlayer(GreedyShowPlayerWithFlip):
     # A player with a heuristic value function that simulates all moves and
-    # picks the one with the highest value. Best perorming heurstic player.
+    # picks the one with the highest value. Best performing heuristic player.
     # There are various knobs in the value function one could tune through RL or
     # grid search.
     c: float
