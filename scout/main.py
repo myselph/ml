@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 import time
 from abc import abstractmethod
-from typing import Callable
+from typing import Callable, Sequence
 from game_state import GameState
 from common import Player
 from players import CompositePlayer, EpsilonGreedyScorePlayer, PlanningPlayer, GreedyShowPlayerWithFlip, RandomPlayer
@@ -46,7 +46,7 @@ parser.add_argument(
 # the scores.
 
 
-def play_round(players: list[Player], dealer: int) -> list[int]:
+def play_round(players: Sequence[Player], dealer: int) -> list[int]:
     game_state = GameState(len(players), dealer)
     game_state.maybe_flip_hand([p.flip_hand for p in players])
     current_player = dealer
@@ -58,7 +58,7 @@ def play_round(players: list[Player], dealer: int) -> list[int]:
     return game_state.scores
 
 
-def play_game(players: list[Player]) -> list[int]:
+def play_game(players: Sequence[Player]) -> list[int]:
     # Play a game - that is num_players rounds, with each player dealing once.
     # Return the cumulative scores.
     scores = []

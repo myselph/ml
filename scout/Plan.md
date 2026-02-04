@@ -36,31 +36,38 @@ diving into more advanced nets like Transformers, and taking things like history
 into account.
 
 ## Strategy / TODO
-1. Try to get as good as PlanningPlayer with a vwery simple setup - just train
-5 policies.
-    1. Done: Figure out the right hyperparams - learning rate, iterations, epochs,
-       episodes, minibatch size. Done. See write-up below.
-    1. Given large minibatch size (512 or 256), but limited dataset size per
-       epoch (on the order of the size of a minibatch - sometimes more sometimes
-       less), incomplete batches are common, giving much more weight to the
-       examples in the incomplete batch (in the current impl of the loss fn).
-       Change loss fn to not use mean, but sum()/constant. This is similar to
-       padding with 0s but more efficient, and more natural in our code.
-    1. Games get shorter as players get better, leading to less data generated
-       per episode. Adjust the number of episodes being played until we have
-       collected at least N examples per player (and pick N to be batch_size or
-       2 * batch_size. Yay, yet another hyperparameter)
-1. Track performance somehow. I find it hard to pick the right learning rate and
-   other hyperparams because I don't really see whether agents get better or not
-   - the losses are kinda meaningless, and I kinda rely on seeing how long games
-   take to judge progress (better players have shorter games it seems).
-   1. Evalute agents in every iteration, to get some notion of progress, just not
-   every iteration - and see how big variance is (eg if we play against PlanningPlaer, do we need 200 games? 20?)
-   1/ I have code to evaluate agents in every iteration but that takes a lot of time.
-   Still, may be worth at least for determining hyperparams, eg LR schedule,
-   so I know when I'm converging.
-1. Experiment with a larger population of agents to add diversity, and keeping
-   the best old players around.
+1. Done: Try to get as good as PlanningPlayer with a very simple setup - just train
+   5 policies.
+1. Done: Track performance. Every 5 iterations, I play matches between the players
+   (~50 / player) and the known baseline PlanningPlayer, then rank them +
+   compute their skills using the Plackett-Luce model. This is very insightful
+   in showing actual convergence (and divergence), but unfortunately is very
+   slow. I need to understand better (via confidence intervals) how many matches
+   I need to get a good enough idea.
+1. WIP: Experiment with a larger population of agents to add diversity, and
+   keeping the best old players around.
+   WIP: Baseline gets pretty good; quickly surpasses PlanningPlayer with the
+   best agent, other agents follow quickly. Exciting! I may need a new heuristic
+   baseline. E.g. one that has a curriculum of strategies. Or that takes into
+   account other player's running scores. Or just keep the best neural player
+   I've trained as new baseline.
+   When using 10 instead of 5 agents + larger networks (128:64:1): first PP beat @ 15, 8/10 @20. Then regression (back to 2), recovery, regression.
+   When using 10 instead of 5 agents + smaller network (32:8:1): first PP beat @ it 35; 5/10 beat it fter 50. Definitely slower progress, but gets there just the same.
+   For both, feels like similar progress to just 5 agents - not sure diversity helps (yet).
+   Kinda puzzled by the regressions. I expected the players to keep getting better,
+   but they top out around 1.9, then regress, then recover. It may be they hit
+   a natural limit with their architecture / feature set - I'm very curious now
+   to try a Transformer or RNN. Or better features such as "almost-long-run".
+   I have not yet tried keeping the best players around.
+1. Add a new baseline? I like PlanningPlayer because it is stable and easy to
+   understand; a neural player will require keeping weights and the exact
+   featurization around. My concern around PP is that if two players are too far
+   apart in their skills, the skill levels may become meaningless. E.g. when I
+   train PP against random players that PP always wins against (except for the
+   occasional bad luck), the bad players still have a skill of 0.39. So I wonder
+   if I get a player that always wins against PP, will I notice? Or will it just
+   saturate at some level like 1.9? I feel these reference players are only
+   useful if they are within 20-80% win rates.
 1. Random thought: Roman idea of using reward=highest_player-second_highest_player
    for highest player. But unclear what reward for other players would be, and
    whether such asymetry would be good.
@@ -335,4 +342,5 @@ self play.
     written functions or players.
     1. Realization that ISMCTS is the wrong tool (or rather offers no advantage
     over flat Monte Carlo). Next up, neural policies. PPO. Reward hacking problems.
-    How to even rank players? How to match them?
+    Need to rank players (Plackett-Luce: like Elo, but for multi-player, and batch-wise, not online), also how to track progress (rewards / loss not
+    helpful).
