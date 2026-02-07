@@ -1,0 +1,136 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.app {
+  min-height: 100vh;
+  background: #fafafa;
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 20px;
+  padding: 40px;
+}
+
+.welcome h1 {
+  margin: 0;
+  font-size: 36px;
+}
+
+.player-count-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  max-width: 300px;
+}
+
+.start-button {
+  padding: 15px 30px;
+  font-size: 18px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.start-button:hover {
+  background: #45a049;
+}
+
+.game-area {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+  flex-wrap: wrap;
+}
+
+.action-button {
+  padding: 10px 20px;
+  border: 2px solid #4CAF50;
+  border-radius: 4px;
+  background: white;
+  color: #4CAF50;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.action-button:hover {
+  background: #f0f8f0;
+}
+
+.action-button.active {
+  background: #4CAF50;
+  color: white;
+}
+
+.confirm-button {
+  background: #4CAF50;
+  color: white;
+}
+
+.confirm-button:hover {
+  background: #45a049;
+}
+
+.show-button {
+  border-color: #2196F3;
+  color: #2196F3;
+}
+
+.show-button:hover {
+  background: #e3f2fd;
+}
+
+.scout-show-button.active {
+  background: #FF9800;
+  border-color: #FF9800;
+  color: white;
+}
+
+.players {
+  margin-top: 20px;
+}
+
+@media (max-width: 768px) {
+  .game-area {
+    padding: 10px;
+  }
+
+  .welcome h1 {
+    font-size: 28px;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+  }
+
+  .action-button {
+    width: 100%;
+  }
+}

@@ -1,0 +1,151 @@
+.player-row {
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    background: white;
+}
+
+.player-row-active {
+    border-color: #4CAF50;
+    border-width: 2px;
+    background: #f0f8f0;
+}
+
+.player-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 10px;
+}
+
+.player-label {
+    font-weight: bold;
+    font-size: 14px;
+    min-width: 80px;
+}
+
+.turn-indicator {
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+.player-hand {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    min-height: 90px;
+    min-width: 655px;
+}
+
+.insertion-point {
+    width: 20px;
+    height: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0.5;
+}
+
+.insertion-point:hover {
+    opacity: 1;
+}
+
+.insertion-point-marker {
+    width: 20px;
+    height: 20px;
+    border: 2px dashed #4CAF50;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+.player-score {
+    font-size: 14px;
+    font-weight: bold;
+    min-width: 80px;
+}
+
+.scout-show-indicator {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    text-align: center;
+    min-width: 50px;
+}
+
+.scout-show-indicator.active {
+    background: #4CAF50;
+    color: white;
+}
+
+.scout-show-indicator.inactive {
+    background: #e0e0e0;
+    color: #999;
+}
+
+.player-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.player-actions .action-button {
+    padding: 8px 16px;
+    border: 2px solid #4CAF50;
+    border-radius: 4px;
+    background: white;
+    color: #4CAF50;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.player-actions .action-button:hover {
+    background: #f0f8f0;
+}
+
+.player-actions .show-button {
+    border-color: #2196F3;
+    color: #2196F3;
+}
+
+.player-actions .show-button:hover {
+    background: #e3f2fd;
+}
+
+.player-actions .scout-show-button.active {
+    background: #FF9800;
+    border-color: #FF9800;
+    color: white;
+}
+
+@media (max-width: 768px) {
+    .player-row {
+        flex-direction: column;
+    }
+
+    .player-row-right {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        padding-left: 0;
+        padding-top: 10px;
+        width: 100%;
+    }
+
+    .insertion-point {
+        height: 75px;
+    }
+}
