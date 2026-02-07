@@ -533,9 +533,14 @@ def rank_players(
         first_player_skill_val=1.0,
         iterations=100,
         lr=0.1):
-    # Rank the players using a Plackett-Luce model. The first player is assumed
-    # to have a known skill level (first_player_skill_val), while the others are
-    # learned, so the first player serves as a reference point.
+    # Rank the players using a Plackett-Luce model.
+    # game_results is a list, each element containing the players that
+    # participated in that game, and who won, as integer indices.
+    # Player 0 is assumed to have a known skill level (first_player_skill_val),
+    # while the others are learned, so the first player serves as a reference point.
+    # Returns: the skills of players in the original order (ie first element is
+    # first_player_skill_val), and the player indices ordered in descending order
+    # according to their skill values.
     skills_improving = torch.zeros(num_players - 1, requires_grad=True)
 
     # Only pass the improving agents to the optimizer
@@ -585,8 +590,12 @@ def evaluate(agents: List[Agent], num_players: int) -> Tuple[List[int], List[flo
     # 1. Create players from agents, and mix in PlanningPlayer as a baseline.
     players = [PlanningPlayer()] + [NeuralPlayer(a) for a in agents]
     # 2. Play rounds (not games - due to random selection, they should all get
-    # their fair share of being dealer). We aim for ~50 games per player.
-    num_games = int(100 * len(players) / num_players)
+    # their fair share of being dealer). Unfortunately, to get a reasonably precise
+    # skill level for a player (that is, +- 10%), we need ~500 games per player.
+    # For num_agents, where the selection probability is num_players/num_agents,
+    # to aim for 500 games we need to play ~500*num_players/num_agents games.
+    # This is due to the very high level of non-determinism in the game environment.
+    num_games = int(500 * len(players) / num_players)
     game_results = []
     print("Evaluating agents...")
     for _ in range(num_games):
@@ -624,7 +633,6 @@ def train(
     num_agents_train = 2 * num_players
     # We keep copies of the best ones.
     num_best_agents = int(0.2 * num_agents_train)
-    num_best_agents = 0
     # So overall there are num_agents + num_best_agents agents.
     state_dim = 57
     value_net = ValueNet(state_dim)
@@ -664,10 +672,14 @@ def train(
         )
 
         # 4. Evaluation & shuffling.
-        if iteration % 5 == 0 and iteration > 0:
-            order, skills = evaluate(agents + list(best_agents.values()), num_players)
-            agents = [agents[i] for i in order[:num_agents_train]]     
-            best_agents = {skills[i]: copy.deepcopy(agents[i]) for i in range(num_best_agents)}
+        if iteration % 20 == 0 and iteration > 0:
+            agents_list = agents + list(best_agents.values())
+            order, skills = evaluate(agents_list, num_players)
+            agents = [agents_list[i] for i in order[:num_agents_train]]
+            best_agents = {}
+            for i in range(num_best_agents):
+                agent_index = order[i]
+                best_agents[skills[i]] = copy.deepcopy(agents_list[agent_index])
             print(f"Best agents' skills: {list(best_agents.keys())}")
 
         print(f"Iteration {iteration} completed.")

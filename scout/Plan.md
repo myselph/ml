@@ -42,8 +42,8 @@ into account.
    (~50 / player) and the known baseline PlanningPlayer, then rank them +
    compute their skills using the Plackett-Luce model. This is very insightful
    in showing actual convergence (and divergence), but unfortunately is very
-   slow. I need to understand better (via confidence intervals) how many matches
-   I need to get a good enough idea.
+   slow. I also found that one needs a very high number of games played between
+   players to get a stable ranking / skill level - about 500 - 1000 per player.
 1. WIP: Experiment with a larger population of agents to add diversity, and
    keeping the best old players around.
    WIP: Baseline gets pretty good; quickly surpasses PlanningPlayer with the
