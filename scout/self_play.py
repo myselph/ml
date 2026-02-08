@@ -1,26 +1,19 @@
 from __future__ import annotations
 import copy
-from math import inf
 import random
 import torch
 import torch.nn as nn
-from torch.optim import Adam
 from dataclasses import dataclass
 from typing import Callable, List, Sequence, Tuple, Dict, Any
-from common import InformationState, Move, Player, StateAndScoreRecord
+from common import InformationState, Move
+from evaluation import play_game, rank_against_planning_player
 from game_state import GameState
-from ismcts_player import gen_ssr
-from main import play_game, play_round, play_tournament
-from neural_value_function import featurize
+from main import play_tournament
 from players import GreedyShowPlayerWithFlip, PlanningPlayer, RandomPlayer
 import argparse
+
+from self_play_agents import Agent, SimpleAgentCollection
 parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--lr",
-    type=float,
-    help="Policy Learning Rate",
-    default=3e-3
-)
 parser.add_argument(
     "--batch_size",
     type=int,
@@ -46,94 +39,6 @@ parser.add_argument(
     default=40
 )
 
-
-def encode_information_state(
-    info_state: InformationState
-) -> torch.Tensor:
-    """
-    Return a tensor of shape [obs_dim].
-    """
-    # For now, just return the current player's score repeated to fill; that
-    # way, the network has something to learn on.
-    # Next, I hope to move to the full featurization used in neural_value_function.
-    # Finally, I hope to use Transformers or RNNs over annotated hand/table
-    # sequences, e.g. "4,4,9,2,3,4,7" ->
-    # "<set2>,4,<single>,9,<run3>,2,3,4,<single>,7" etc.
-    # Unclear whether "3,2,1,2" should be run2,run2 or run3,single.
-    ssr = StateAndScoreRecord(
-        info_state.current_player,
-        tuple(c[0] for c in info_state.hand),
-        info_state.table,
-        info_state.num_cards,
-        info_state.scores,
-        info_state.can_scout_and_show, inf
-    )
-
-    return featurize([ssr])[0]
-
-
-def encode_post_move_states(
-    post_move_states: tuple[InformationState, ...]
-) -> torch.Tensor:
-    return torch.stack([encode_information_state(s) for s in post_move_states])
-
-
-class PolicyNet(nn.Module):
-    # ----------------------------------------------------------------------
-    # The Policy network is a ranking model - it takes the state visible to
-    # the current player, and the state after each possible move, and "ranks"
-    # the moves by producing a logit for each post move state.
-    # ----------------------------------------------------------------------
-    def __init__(self, state_dim: int):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(state_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1),
-        )
-
-    def forward(
-            self,
-            pre_move_state: torch.Tensor,
-            post_move_states: torch.Tensor) -> torch.Tensor:
-        """
-        pre_move_state: [1, D]
-        post_move_states: [num_moves, D]
-        return logits: [1, num_moves]
-        """
-
-        # Expand obs to [num_moves, obs_dim] using broadcasting (no memory
-        # copy)
-        # Consider removing this - I don't think it adds extra info beyond
-        # the post_move_states, but since all the plubming is in place, I'm
-        # keeping for now.
-        # pre_move_state = pre_move_state.expand(post_move_states.size(0), -1)
-
-        # Concatenate to [num_moves,   obs_dim + move_dim]
-        # combined = torch.cat([pre_move_state, post_move_states], dim=-1)
-
-        combined = post_move_states  # [N, D]
-
-        # Output: [N, 1] -> squeeze to [1, N] or [N]
-        return self.net(combined).view(1, -1)
-
-
-class ValueNet(nn.Module):
-    def __init__(self, state_dim):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(state_dim, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1),
-        )
-
-    def forward(self, state: torch.Tensor) -> torch.Tensor:
-        # Return the score, for now.
-        return self.net(state)
 
 # ----------------------------------------------------------------------
 # Data structures for rollout storage
@@ -162,9 +67,8 @@ class Trajectory:
     transitions: List[Transition]
 
 
-
 class NeuralPlayer(PlanningPlayer):
-    # A player wrapping an agent that wraps a neural policy and value network.
+    # A Player wrapping an agent that wraps a neural policy and value network.
     def __init__(self, agent: Agent):
         self.agent = agent
 
@@ -191,7 +95,7 @@ class NeuralPlayer(PlanningPlayer):
 # ----------------------------------------------------------------------
 
 def ppo_loss(
-    policy: PolicyNet,
+    policy: nn.Module,
     value_fn: nn.Module,
     pre_move_states: list[torch.Tensor],  # batch list of tensor [D]
     post_move_states_list: list[torch.Tensor],  # batch list of tensor [N_i, D]
@@ -295,49 +199,6 @@ def compute_gae(
     return returns, advantages
 
 
-class Agent:
-    # The agent class wraps a policy network and a value function.
-    def __init__(self, policy: PolicyNet, optim: torch.optim.Optimizer, value_fn: nn.Module):
-        self.policy = policy
-        self.optim = optim
-        self.value_fn = value_fn
-
-    def encode_inputs(
-        self,
-        pre_move_state: InformationState,
-        post_move_states: tuple[InformationState, ...],
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # Separate function for encoding inputs so we can use those not just
-        # for inference (select_action) but also for training.
-        encoded_pre_move_state = encode_information_state(
-            pre_move_state).unsqueeze(0)  # [1, D]
-        encoded_post_move_states = encode_post_move_states(
-            post_move_states)  # [N, D]
-        return encoded_pre_move_state, encoded_post_move_states
-
-    def select_action(
-        self,
-        encoded_pre_move_state: torch.Tensor,         # shape: [obs_dim]
-        encoded_post_move_states: torch.Tensor,        # shape: [N, obs_dim]
-    ) -> Tuple[int, float, float]:
-        """
-        Compute distribution over legal moves and sample one.
-        Returns:
-            action_idx, logprob of sampled move, value_prediction
-        """
-        logits = self.policy(
-            encoded_pre_move_state,
-            encoded_post_move_states)       # [1, N]
-        logprobs = torch.log_softmax(logits, dim=-1)[0]  # [N]
-        probs = torch.exp(logprobs)
-        dist = torch.distributions.Categorical(probs)
-        a = int(dist.sample().item())
-
-        value = self.value_fn(encoded_pre_move_state).item()
-
-        return a, float(logprobs[a].item()), value
-
-
 # ----------------------------------------------------------------------
 # Rollout generation
 # ----------------------------------------------------------------------
@@ -359,8 +220,8 @@ def collect_episodes(
     data: Dict[int, List[Trajectory]] = {i: [] for i in range(len(agents))}
 
     episode = 0
-    while episode < min_episodes or any(not traj for traj in data.values()) or \
-        any(sum(len(traj.transitions) for traj in data[i]) < min_examples_per_player for i in data):
+    while episode < min_episodes or any(not traj for traj in data.values()) or any(sum(
+            len(traj.transitions) for traj in data[i]) < min_examples_per_player for i in data):
         episode += 1
         episode_agent_indices = random.sample(range(len(agents)), num_players)
         episode_agents = [agents[i] for i in episode_agent_indices]
@@ -476,8 +337,6 @@ def flatten_trajectories(
 # ----------------------------------------------------------------------
 def ppo_update(
     agents: List[Agent],
-    value_fn: nn.Module,
-    value_optimizer: Adam,
     data_by_agent: Dict[int, Dict[str, Any]],
     minibatch_size: int,
     epochs: int
@@ -495,19 +354,20 @@ def ppo_update(
         returns = data["returns"]
         advantages = data["advantages"]
 
-        N = len(pre_move_states)        
+        N = len(pre_move_states)
         for _ in range(epochs):
             perm = torch.randperm(N)
             # TODO: We sample episodes until we have at least one minibatch
             # per agent; so for all agents we typically have just a little bit
-            # more than one minibatch; and that last partial batch could be ignored.            
+            # more than one minibatch; and that last partial batch could be
+            # ignored.
             for start in range(0, N, minibatch_size):
                 batch = perm[start:start + minibatch_size]
                 prms = [pre_move_states[i] for i in batch]
                 psms = [post_move_states_list[i] for i in batch]
                 loss, metrics = ppo_loss(
                     policy=agents[agent_id].policy,
-                    value_fn=value_fn,
+                    value_fn=agents[agent_id].value_fn,
                     pre_move_states=prms,
                     post_move_states_list=psms,
                     action_idx=actions[batch],
@@ -516,105 +376,12 @@ def ppo_update(
                     advantages=advantages[batch],
                     minibatch_size=minibatch_size
                 )
-                
-                agents[agent_id].optim.zero_grad()
-                value_optimizer.zero_grad()
+
+                agents[agent_id].policy_optim.zero_grad()
+                agents[agent_id].value_optim.zero_grad()
                 loss.backward()
-                agents[agent_id].optim.step()
-                value_optimizer.step()
-
-
-# ----------------------------------------------------------------------
-# Evaluation and ranking
-# ----------------------------------------------------------------------
-def rank_players(
-        game_results,
-        num_players,
-        first_player_skill_val=1.0,
-        iterations=100,
-        lr=0.1):
-    # Rank the players using a Plackett-Luce model.
-    # game_results is a list, each element containing the players that
-    # participated in that game, and who won, as integer indices.
-    # Player 0 is assumed to have a known skill level (first_player_skill_val),
-    # while the others are learned, so the first player serves as a reference point.
-    # Returns: the skills of players in the original order (ie first element is
-    # first_player_skill_val), and the player indices ordered in descending order
-    # according to their skill values.
-    skills_improving = torch.zeros(num_players - 1, requires_grad=True)
-
-    # Only pass the improving agents to the optimizer
-    optimizer = torch.optim.Adam([skills_improving], lr=lr)
-
-    # Pre-wrap fixed skill as a non-grad tensor
-    fixed_skill = torch.log(torch.tensor([float(first_player_skill_val)]))
-
-    for i in range(iterations):
-        optimizer.zero_grad()
-
-        # Combine fixed agent (index 0) with improving agents
-        # This creates a full vector [fixed, agent1, agent2, ...]
-        all_skills = torch.cat([fixed_skill, skills_improving])
-        total_nll = torch.tensor(0.0)
-
-        for participants, winner_idx in game_results:
-            # We index into the combined vector
-            participant_skills = all_skills[list(participants)]
-            winner_skill = all_skills[winner_idx]
-
-            # NLL = log(sum(exp(participants))) - winner_skill
-            log_prob = winner_skill - \
-                torch.logsumexp(participant_skills, dim=0)
-            total_nll -= log_prob
-
-        total_nll.backward()
-        optimizer.step()
-
-    with torch.no_grad():
-        final_skills_log = torch.cat([fixed_skill, skills_improving])
-        final_skills_exp = torch.exp(final_skills_log)
-        order = torch.argsort(final_skills_exp, descending=True)
-
-    return final_skills_exp.tolist(), order.tolist()
-
-
-def evaluate(agents: List[Agent], num_players: int) -> Tuple[List[int], List[float]]:
-    """
-    Evaluate agents by playing them against each other in a series of games
-    with randomly picked players including known baseline players, and compute
-    their ranks + skills.
-    Return: Tuple of
-      - Agent indices ordered from best to worst
-      - The respective skills (same order)
-    """
-    # 1. Create players from agents, and mix in PlanningPlayer as a baseline.
-    players = [PlanningPlayer()] + [NeuralPlayer(a) for a in agents]
-    # 2. Play rounds (not games - due to random selection, they should all get
-    # their fair share of being dealer). Unfortunately, to get a reasonably precise
-    # skill level for a player (that is, +- 10%), we need ~500 games per player.
-    # For num_agents, where the selection probability is num_players/num_agents,
-    # to aim for 500 games we need to play ~500*num_players/num_agents games.
-    # This is due to the very high level of non-determinism in the game environment.
-    num_games = int(500 * len(players) / num_players)
-    game_results = []
-    print("Evaluating agents...")
-    for _ in range(num_games):
-        selected_indices = random.sample(range(len(players)), num_players)
-        selected_players = [players[i] for i in selected_indices]
-        scores = play_round(selected_players, 0)
-        winner_index = max(range(len(scores)), key=lambda i: scores[i])
-        winning_player_index = selected_indices[winner_index]
-        game_results.append((set(selected_indices), winning_player_index))
-    # 3. Rank players using Plackett-Luce model
-    skills, order = rank_players(game_results, len(players))
-    order = [index for index in order if index != 0]
-    # 4. Omit PlanningPlayer from returned list, return agents in ranked order.
-    skills = [skills[i] for i in order]
-    order = [i - 1 for i in order]
-    ftd_skill_list = ", ".join([f"{x:.2f}" for x in skills])    
-    print(f"Skills + order (1.0 == PlanningPlayer): {ftd_skill_list}, {order}")
-
-    return order, skills
+                agents[agent_id].policy_optim.step()
+                agents[agent_id].value_optim.step()
 
 
 # ----------------------------------------------------------------------
@@ -634,14 +401,8 @@ def train(
     # We keep copies of the best ones.
     num_best_agents = int(0.2 * num_agents_train)
     # So overall there are num_agents + num_best_agents agents.
-    state_dim = 57
-    value_net = ValueNet(state_dim)
-    value_optim = Adam(value_net.parameters(), lr=1e-3)
+    agents = SimpleAgentCollection.create_agents(num_agents_train)
 
-    for _ in range(num_agents_train):
-        policy_net = PolicyNet(state_dim)
-        policy_optim = Adam(policy_net.parameters(), lr=args.lr)
-        agents.append(Agent(policy_net, policy_optim, value_net))
     best_agents: dict[float, Agent] = {}
 
     def env_constructor(dealer): return GameState(
@@ -664,26 +425,31 @@ def train(
         # 3. PPO update
         ppo_update(
             agents,
-            value_net,
-            value_optim,
             data,
             minibatch_size,
             epochs
         )
 
         # 4. Evaluation & shuffling.
-        if iteration % 20 == 0 and iteration > 0:
+        if iteration % 40 == 0 and iteration > 0:
             agents_list = agents + list(best_agents.values())
-            order, skills = evaluate(agents_list, num_players)
+            order, skills = rank_against_planning_player(
+                [NeuralPlayer(a) for a in agents_list], num_players)
             agents = [agents_list[i] for i in order[:num_agents_train]]
+            SimpleAgentCollection.save_agents(
+                agents, [
+                    f"simple_agent_{i}_it_{iteration}_skill_{
+                        skills[i]:.2f}.pth" for i in range(
+                        len(agents))], f"simple_agent_it_{iteration}_value_fn.pth")
             best_agents = {}
             for i in range(num_best_agents):
                 agent_index = order[i]
-                best_agents[skills[i]] = copy.deepcopy(agents_list[agent_index])
+                best_agents[skills[i]] = copy.deepcopy(
+                    agents_list[agent_index])
             print(f"Best agents' skills: {list(best_agents.keys())}")
 
         print(f"Iteration {iteration} completed.")
-        
+
     return agents
 
 

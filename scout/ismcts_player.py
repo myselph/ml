@@ -291,7 +291,7 @@ class IsmctsPlayer(Player):
         self._num_expansion_files = 0
         if use_value_fn:
             self._value_fn = neural_value_function.create_inference_model(
-                'value_function.pth')
+                'ismcts_value_function.pth')
         else:
             self._value_fn = None
 
