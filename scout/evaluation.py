@@ -157,8 +157,9 @@ def rank_players(
 
 
 def rank(players: list[Player],
-             num_players_per_round: int) -> tuple[list[int],
-                                                  list[float]]:
+         num_players_per_round: int,
+         num_games_per_player: int = 500) -> tuple[list[int],
+                                                   list[float]]:
     # Play rounds (not games - due to random selection, they should all get
     # their fair share of being dealer). Unfortunately, to get a reasonably precise
     # skill level for a player (that is, +- 10%), we need ~500 games per player.
@@ -166,7 +167,10 @@ def rank(players: list[Player],
     # to aim for 500 games we need to play ~500*num_players/num_agents games.
     # This is due to the very high level of non-determinism in the game
     # environment.
-    num_games = int(500 * len(players) / num_players_per_round)
+    num_games = int(
+        num_games_per_player *
+        len(players) /
+        num_players_per_round)
     game_results = []
     print("Evaluating agents...")
     for _ in range(num_games):
@@ -190,6 +194,8 @@ def rank(players: list[Player],
 
 
 def rank_against_planning_player(
-        players: list[Player], num_players_per_round: int) -> tuple[list[int], list[float]]:
+        players: list[Player], num_players_per_round: int,
+        num_games_per_player: int = 500) -> tuple[list[int], list[float]]:
     # 1. Create players from agents, and mix in PlanningPlayer as a baseline.
-    return rank([PlanningPlayer()] + players, num_players_per_round)
+    return rank([PlanningPlayer()] + players, num_players_per_round,
+                num_games_per_player=num_games_per_player)

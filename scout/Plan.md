@@ -61,16 +61,10 @@ into account.
    I have not yet tried keeping the best players around.
 1. Add a new baseline? I like PlanningPlayer because it is stable and easy to
    understand; a neural player will require keeping weights and the exact
-   featurization around. My concern around PP is that if two players are too far
-   apart in their skills, the skill levels may become meaningless. E.g. when I
-   train PP against random players that PP always wins against (except for the
-   occasional bad luck), the bad players still have a skill of 0.39. So I wonder
-   if I get a player that always wins against PP, will I notice? Or will it just
-   saturate at some level like 1.9? I feel these reference players are only
-   useful if they are within 20-80% win rates.
-1. Random thought: Roman idea of using reward=highest_player-second_highest_player
-   for highest player. But unclear what reward for other players would be, and
-   whether such asymetry would be good.
+   featurization around. My concern around PP as baseline is that two other
+   players A, B might have relative skills, but get the same win rates against
+   PP (under a reasonably large number of games) because there's an upper bound
+   of how much you can win against PP due to the inherent non-determinism.
 1. Try Transformers. May benefit from initializing with imitation learning,
    unclear.
 

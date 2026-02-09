@@ -12,7 +12,7 @@ from main import play_tournament
 from players import GreedyShowPlayerWithFlip, PlanningPlayer, RandomPlayer
 import argparse
 
-from self_play_agents import Agent, SimpleAgentCollection
+from self_play_agents import Agent, SimpleAgentCollection, TransformerAgentCollection
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--batch_size",
@@ -56,7 +56,7 @@ class Transition:
     reward: float               # scalar
     value: float                # scalar
     done: bool                  # episode termination flag
-    post_move_states: torch.Tensor
+    post_move_states: tuple[torch.Tensor, ...]
 
 
 @dataclass
@@ -74,13 +74,8 @@ class NeuralPlayer(PlanningPlayer):
 
     def select_move(self, info_state: InformationState) -> Move:
         moves, raw_post_move_states = info_state.post_move_states()
-        pre_move_state, post_move_states = self.agent.encode_inputs(
-            info_state, raw_post_move_states)
-
-        action_idx, _, _ = self.agent.select_action(
-            pre_move_state,
-            post_move_states
-        )
+        post_move_states = self.agent.featurize(raw_post_move_states)
+        action_idx, _ = self.agent.select_action(post_move_states)
         return moves[action_idx]
 
     def flip_hand(self, hand: Sequence[tuple[int, int]]) -> bool:
@@ -95,10 +90,9 @@ class NeuralPlayer(PlanningPlayer):
 # ----------------------------------------------------------------------
 
 def ppo_loss(
-    policy: nn.Module,
-    value_fn: nn.Module,
-    pre_move_states: list[torch.Tensor],  # batch list of tensor [D]
-    post_move_states_list: list[torch.Tensor],  # batch list of tensor [N_i, D]
+    agent: Agent,
+    pre_move_states: list[torch.Tensor],
+    post_move_states_list: list[tuple[torch.Tensor, ...]],
     action_idx: torch.Tensor,     # shape: [batch]
     old_logprob: torch.Tensor,    # shape: [batch]
     returns: torch.Tensor,        # shape: [batch]
@@ -115,7 +109,8 @@ def ppo_loss(
     - value_fn(obs) -> scalar value prediction
 
     NOTE: Because legal action sets differ per item, we must compute
-    action logprobs one sample at a time.
+    action logprobs one sample at a time. I'm sure this could be optimized
+    somehow, but it's not a bottleneck yet.
     """
 
     batch_size = len(pre_move_states)
@@ -123,16 +118,13 @@ def ppo_loss(
     entropies = []
 
     for i in range(batch_size):
-        pre_move_state = pre_move_states[i]
         post_move_states = post_move_states_list[i]
-
-        logits = policy(pre_move_state,
-                        post_move_states)    # shape: [1, num_actions]
-        logprobs = torch.log_softmax(logits, dim=-1)  # [1, num_actions]
+        logprobs = agent.compute_logprobs(
+            post_move_states)  # shape: [num_actions]
 
         # Select logprob of performed action
         chosen = action_idx[i]
-        new_logprobs.append(logprobs[0, chosen])
+        new_logprobs.append(logprobs[chosen])
 
         # Entropy for this decision
         entropy = -(logprobs * torch.exp(logprobs)).sum()
@@ -150,8 +142,7 @@ def ppo_loss(
     policy_loss = -torch.sum(torch.min(unclipped, clipped)) / minibatch_size
 
     # Value loss
-    pre_move_states_enc = torch.stack(pre_move_states)  # shape: [batch, D]
-    values = value_fn(pre_move_states_enc).squeeze(-1)        # shape: [batch]
+    values = agent.compute_values(tuple(pre_move_states))
     value_loss = vf_coef * torch.sum((returns - values) ** 2) / minibatch_size
 
     # Entropy bonus
@@ -229,7 +220,6 @@ def collect_episodes(
         # For now, we just flip like PlanningPlayer would.
         # Eventually, we should learn a policy for that, but it complicates
         # training a bit because the flip decision requires another network.
-        # TODO: Can we just use the neural value function?
         pp = PlanningPlayer()
         env.maybe_flip_hand([lambda h: pp.flip_hand(h)
                             for _ in episode_agents])
@@ -242,10 +232,10 @@ def collect_episodes(
 
             raw_pre_move_state = env.info_state()
             moves, raw_post_move_states = raw_pre_move_state.post_move_states()
-            pre_move_state, post_move_states = agent.encode_inputs(
-                raw_pre_move_state, raw_post_move_states)
-            action_idx, logp, val = agent.select_action(
-                pre_move_state, post_move_states)
+            pre_move_state = agent.featurize((raw_pre_move_state,))[0]
+            post_move_states = agent.featurize(raw_post_move_states)
+            action_idx, logp = agent.select_action(post_move_states)
+            value = agent.value(pre_move_state)
             env.move(moves[action_idx])
             reward = 0
             done = env.is_finished()
@@ -255,7 +245,7 @@ def collect_episodes(
                 action_idx=action_idx,
                 logprob=logp,
                 reward=reward,
-                value=val,
+                value=value,
                 done=done,
                 post_move_states=post_move_states,
             ))
@@ -291,7 +281,7 @@ def flatten_trajectories(
         rew_list = []
         val_list = []
         done_list = []
-        post_move_states_list: list[torch.Tensor] = []
+        post_move_states_list: list[tuple[torch.Tensor, ...]] = []
 
         for traj in traj_list:
             for tr in traj.transitions:
@@ -305,7 +295,7 @@ def flatten_trajectories(
 
         val_list.append(0.0)  # bootstrap value for final state
 
-        actions = torch.tensor(act_list, dtype=torch.long)   # [T]
+        actions = torch.tensor(act_list, dtype=torch.int16)   # [T]
         old_logprobs = torch.tensor(logp_list, dtype=torch.float32)  # [T]
         rewards = torch.tensor(rew_list, dtype=torch.float32)  # [T]
         dones = torch.tensor(done_list)                       # [T]
@@ -339,7 +329,8 @@ def ppo_update(
     agents: List[Agent],
     data_by_agent: Dict[int, Dict[str, Any]],
     minibatch_size: int,
-    epochs: int
+    epochs: int,
+    microbatch_size: int = 32
 ):
     """
     Run PPO updates for each agent separately.
@@ -347,6 +338,7 @@ def ppo_update(
     """
 
     for agent_id, data in data_by_agent.items():
+        print(f"training agent {agent_id}")
         pre_move_states = data["pre_move_states"]
         actions = data["actions"]
         post_move_states_list = data["post_move_states_list"]
@@ -355,31 +347,43 @@ def ppo_update(
         advantages = data["advantages"]
 
         N = len(pre_move_states)
-        for _ in range(epochs):
+        for epoch in range(epochs):
             perm = torch.randperm(N)
             # TODO: We sample episodes until we have at least one minibatch
             # per agent; so for all agents we typically have just a little bit
             # more than one minibatch; and that last partial batch could be
             # ignored.
             for start in range(0, N, minibatch_size):
-                batch = perm[start:start + minibatch_size]
-                prms = [pre_move_states[i] for i in batch]
-                psms = [post_move_states_list[i] for i in batch]
-                loss, metrics = ppo_loss(
-                    policy=agents[agent_id].policy,
-                    value_fn=agents[agent_id].value_fn,
-                    pre_move_states=prms,
-                    post_move_states_list=psms,
-                    action_idx=actions[batch],
-                    old_logprob=old_logprobs[batch],
-                    returns=returns[batch],
-                    advantages=advantages[batch],
-                    minibatch_size=minibatch_size
-                )
+                end = min(start + minibatch_size, N)
+                minibatch_indices = perm[start:end]
 
+                # Zero gradients at start of minibatch
                 agents[agent_id].policy_optim.zero_grad()
                 agents[agent_id].value_optim.zero_grad()
-                loss.backward()
+
+                # Process minibatch in microbatches to save memory
+                minibatch_len = len(minibatch_indices)
+                for mb_start in range(0, minibatch_len, microbatch_size):
+                    mb_end = min(mb_start + microbatch_size, minibatch_len)
+                    mb_indices = minibatch_indices[mb_start:mb_end]
+
+                    prms = [pre_move_states[i] for i in mb_indices]
+                    psms = [post_move_states_list[i] for i in mb_indices]
+
+                    # Compute loss for microbatch
+                    loss, metrics = ppo_loss(
+                        agents[agent_id],
+                        pre_move_states=prms,
+                        post_move_states_list=psms,
+                        action_idx=actions[mb_indices],
+                        old_logprob=old_logprobs[mb_indices],
+                        returns=returns[mb_indices],
+                        advantages=advantages[mb_indices],
+                        minibatch_size=minibatch_len  # Normalize by full minibatch size
+                    )
+                    loss.backward()
+
+                # Step optimizer after full minibatch
                 agents[agent_id].policy_optim.step()
                 agents[agent_id].value_optim.step()
 
@@ -397,11 +401,13 @@ def train(
 ):
     agents = []
     # Number of agents we train in an iteration.
-    num_agents_train = 2 * num_players
+    num_agents_train = num_players
     # We keep copies of the best ones.
     num_best_agents = int(0.2 * num_agents_train)
+    num_best_agents = 0
     # So overall there are num_agents + num_best_agents agents.
-    agents = SimpleAgentCollection.create_agents(num_agents_train)
+    # agents = SimpleAgentCollection.create_agents(num_agents_train)
+    agents = TransformerAgentCollection.create_agents(num_agents_train)
 
     best_agents: dict[float, Agent] = {}
 
@@ -421,26 +427,29 @@ def train(
 
         # 2. Flatten storage and compute GAE
         data = flatten_trajectories(trajectories)
+        del trajectories
 
         # 3. PPO update
         ppo_update(
             agents,
             data,
             minibatch_size,
-            epochs
+            epochs,
+            microbatch_size=32
         )
+        del data
 
         # 4. Evaluation & shuffling.
-        if iteration % 40 == 0 and iteration > 0:
+        if iteration % 5 == 0 and iteration > 0:
             agents_list = agents + list(best_agents.values())
             order, skills = rank_against_planning_player(
-                [NeuralPlayer(a) for a in agents_list], num_players)
+                [NeuralPlayer(a) for a in agents_list], num_players, num_games_per_player=50)
             agents = [agents_list[i] for i in order[:num_agents_train]]
-            SimpleAgentCollection.save_agents(
+            TransformerAgentCollection.save_agents(
                 agents, [
-                    f"simple_agent_{i}_it_{iteration}_skill_{
+                    f"transformer_agent_{i}_it_{iteration}_skill_{
                         skills[i]:.2f}.pth" for i in range(
-                        len(agents))], f"simple_agent_it_{iteration}_value_fn.pth")
+                        len(agents))], f"transformer_agent_it_{iteration}_value_fn.pth")
             best_agents = {}
             for i in range(num_best_agents):
                 agent_index = order[i]
