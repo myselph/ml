@@ -271,24 +271,28 @@ class SimpleAgentCollection(AgentCollection):
 # eventually taking history (which cards have been played) into account.
 # A secondary hope is that having other architectures in the mix adds diversity.
 ##############################################################################
-transformer_dict = {
-    "<padding>": 0,
-    "<num_players>": 1,
-    "</num_players>": 2,
-    "<num_cards>": 3,
-    "</num_cards>": 4,
-    "<scores>": 5,
-    "</scores>": 6,
-    "<scout_and_show>": 7,
-    "</scout_and_show>": 8,
-    "<table>": 9,
-    "</table>": 10,
-    "<hand>": 11,
-    "</hand>": 12,
-    "True": 13,
-    "False": 14,
-    "<eos>": 15,
-}
+dict_tokens = [
+    "<padding>",
+    "<num_players>",
+    "</num_players>",
+    "<num_cards>",
+    "</num_cards>",
+    "<scores>",
+    "</scores>",
+    "<scout_and_show>",
+    "</scout_and_show>",
+    "<table>",
+    "</table>",
+    "<hand>",
+    "</hand>",
+    "True",
+    "False",
+    "<eos>",
+    "<too_small>",
+    "<too_large>",
+]
+
+transformer_dict = {token: i for i, token in enumerate(dict_tokens)}
 next_index = len(transformer_dict)
 for i in range(1,11):
     transformer_dict[f"<card{i}>"] = next_index
@@ -297,8 +301,6 @@ dict_int_limits = [-20, 20]
 for i in range(dict_int_limits[0], dict_int_limits[1] + 1):
     transformer_dict[f"int_{i}"] = next_index
     next_index += 1
-transformer_dict['too_small'] = next_index
-transformer_dict['too_large'] = next_index + 1
 
 def map_card_to_tf_dict(i: int) -> int:
     return transformer_dict[f"<card{i}>"]
@@ -321,7 +323,7 @@ class TransformerPolicyNet(nn.Module):
         self.embedding = nn.Embedding(len(transformer_dict), embed_dim)
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
-                embed_dim, num_heads, dim_ffd, batch_first=True), num_layers)
+                embed_dim, num_heads, dim_ffd, batch_first=True, norm_first=True), num_layers)
         self.output_layer = nn.Linear(embed_dim, 1)
 
     def forward(
@@ -341,7 +343,7 @@ class TransformerValueNet(nn.Module):
         self.embedding = nn.Embedding(len(transformer_dict), embed_dim)
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
-                embed_dim, num_heads, dim_ffd, batch_first=True), num_layers)
+                embed_dim, num_heads, dim_ffd, batch_first=True, norm_first=True), num_layers)
         self.output_layer = nn.Linear(embed_dim, 1)
 
     def forward(self, states: torch.Tensor, padding_mask: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
