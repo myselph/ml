@@ -307,9 +307,9 @@ def map_card_to_tf_dict(i: int) -> int:
 
 def map_int_to_tf_dict(i: int) -> int:
     if i < dict_int_limits[0]:
-        return transformer_dict['too_small']
+        return transformer_dict['<too_small>']
     elif i > dict_int_limits[1]:
-        return transformer_dict['too_large']
+        return transformer_dict['<too_large>']
     else:
         return transformer_dict[f"int_{i}"]
 
@@ -425,10 +425,10 @@ class TransformerAgent(Agent):
 class TransformerAgentCollection(AgentCollection):
     @staticmethod
     def create_agents(num_agents: int) -> list[Agent]:
-        embed_dim = 32
-        num_heads = 4
+        embed_dim = 8
+        num_heads = 2
         num_layers = 2
-        dim_ffd = 128
+        dim_ffd = 32
         policy_lr = 3e-3
         value_fn = TransformerValueNet(embed_dim, num_heads, dim_ffd, num_layers)
         value_optim = torch.optim.Adam(value_fn.parameters(), lr=1e-3)
