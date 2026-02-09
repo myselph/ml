@@ -39,6 +39,8 @@ parser.add_argument(
     default=40
 )
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 # ----------------------------------------------------------------------
 # Data structures for rollout storage
